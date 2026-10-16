@@ -1,239 +1,785 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Defensa Integral de la Nación | Portal Académico - Ing. Eddy Bolívar</title>
-    <!-- Tailwind CSS para diseño moderno -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Control de Asistencia y Notas - UNEFA</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <style>
+    :root {
+      --primary: #003366;
+      --secondary: #0056b3;
+      --success: #28a745;
+      --danger: #dc3545;
+      --warning: #ffc107;
+      --info: #17a2b8;
+      --light: #f8f9fa;
+      --dark: #343a40;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f6f9;
+      color: #333;
+    }
+    header {
+      background-color: var(--primary);
+      color: white;
+      padding: 15px 20px;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    header h1 { margin: 0; font-size: 1.6rem; }
+    header p { margin: 5px 0 0; font-size: 0.9rem; opacity: 0.8; }
+    
+    .container {
+      max-width: 1250px;
+      margin: 20px auto;
+      padding: 0 15px;
+    }
+    
+    /* Panel de Botones Principales */
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+    }
+    
+    .btn {
+      padding: 12px 15px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-align: center;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--secondary); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-success:hover { background: #218838; }
+    .btn-warning { background: var(--warning); color: #212529; }
+    .btn-warning:hover { background: #e0a800; }
+    .btn-info { background: var(--info); color: white; }
+    .btn-info:hover { background: #138496; }
+    .btn-dark { background: var(--dark); color: white; }
+    .btn-dark:hover { background: #23272b; }
+    
+    .tabs-container {
+      display: flex;
+      gap: 5px;
+      border-bottom: 2px solid #dee2e6;
+      margin-bottom: 15px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      border: none;
+      background: #e9ecef;
+      border-radius: 5px 5px 0 0;
+      cursor: pointer;
+      font-weight: bold;
+      color: #495057;
+      white-space: nowrap;
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .controls-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 15px;
+      background: white;
+      padding: 12px;
+      border-radius: 6px;
+    }
+
+    select, input[type="text"], input[type="date"], input[type="number"] {
+      padding: 8px 12px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #dee2e6;
+    }
+    th {
+      background: #f1f3f5;
+      font-weight: 700;
+      color: var(--dark);
+    }
+    tr:hover { background: #f8f9fa; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: white;
+      padding: 25px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 800px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+      margin-bottom: 15px;
+    }
+    .close-btn { font-size: 1.5rem; cursor: pointer; border: none; background: none; }
+
+    .scanner-box {
+      text-align: center;
+      background: #222;
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    video { width: 100%; max-height: 200px; border-radius: 6px; background: #000; display: none; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-top: 15px;
+    }
+    .card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+  </style>
 </head>
-<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col">
+<body>
 
-    <!-- Header Institucional -->
-    <header class="bg-slate-800 border-b border-slate-700 shadow-lg">
-        <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col md:flex-row justify-between items-center">
-            <div class="flex items-center space-x-4 mb-4 md:mb-0">
-                <div class="bg-emerald-600 p-3 rounded-xl shadow-md">
-                    <i class="fa-solid fa-shield-halved text-2xl text-white"></i>
-                </div>
-                <div>
-                    <h1 class="text-2xl font-bold tracking-wide">Defensa Integral de la Nación</h1>
-                    <p class="text-xs text-slate-400 uppercase tracking-widest">UNEFA • Núcleo Vargas | Facilitador: Ing. Eddy Bolívar</p>
-                </div>
-            </div>
-            <div class="bg-slate-700 px-4 py-2 rounded-lg text-sm border border-slate-600 flex items-center space-x-2">
-                <i class="fa-solid fa-calendar-days text-emerald-400"></i>
-                <span>Clase Inaugural: <strong>17 de Octubre, 2026</strong></span>
-            </div>
+  <header>
+    <h1>REPÚBLICA BOLIVARIANA DE VENEZUELA - UNEFA</h1>
+    <p>Sistema Integral de Asistencia y Notas | Prof. Eddy Alexander Bolívar Rodríguez</p>
+  </header>
+
+  <div class="container">
+    
+    <!-- Barra de Herramientas con el nuevo botón de Notas -->
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="openModal('modalCarga')">📸 Cargar Listados (PDF/Foto)</button>
+      <button class="btn btn-success" onclick="openModal('modalChequeo')">🆔 Formulario de Chequeo</button>
+      <button class="btn btn-info" onclick="openModal('modalNotas')">📝 Añadir Notas por Alumno</button>
+      <button class="btn btn-warning" onclick="verAsistenciaDia()">📊 Asistencia del Día</button>
+      <button class="btn btn-dark" onclick="verGraficasEvolucion()">📉 Gráficas y Acumulados</button>
+    </div>
+
+    <!-- Pestañas por Sección / Materia -->
+    <div class="tabs-container" id="tabsSecciones"></div>
+
+    <!-- Opciones de Filtro y Ordenamiento -->
+    <div class="controls-row">
+      <div>
+        <label><strong>Ordenar por:</strong> </label>
+        <select id="selectOrden" onchange="ordenarYFiltrar()">
+          <option value="cedula_asc">Cédula (Menor a Mayor)</option>
+          <option value="cedula_desc">Cédula (Mayor a Menor)</option>
+          <option value="nombre_asc">Nombre (A-Z)</option>
+          <option value="genero">Género</option>
+        </select>
+      </div>
+      <div>
+        <label><strong>Filtrar Género:</strong> </label>
+        <select id="selectGenero" onchange="ordenarYFiltrar()">
+          <option value="todos">Todos</option>
+          <option value="M">Masculino</option>
+          <option value="F">Femenino</option>
+        </select>
+      </div>
+      <div>
+        <input type="text" id="buscarInput" placeholder="Buscar por nombre o cédula..." onkeyup="ordenarYFiltrar()">
+      </div>
+    </div>
+
+    <!-- Tabla Principal de Alumnos -->
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Cédula</th>
+            <th>Nombres y Apellidos</th>
+            <th>Género</th>
+            <th>Semestre</th>
+            <th>Carrera</th>
+            <th>Materia / Sección</th>
+          </tr>
+        </thead>
+        <tbody id="tablaAlumnosBody"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- Modal 1: Carga de Listados (PDFs / Fotos) -->
+  <div class="modal" id="modalCarga">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Cargar Listados de Alumnos (Foto o PDF)</h3>
+        <button class="close-btn" onclick="closeModal('modalCarga')">&times;</button>
+      </div>
+      <p>Selecciona uno o varios archivos PDF o imágenes para procesar:</p>
+      <input type="file" id="inputLoteFiles" multiple accept="application/pdf,image/*" style="margin-bottom: 15px;">
+      <br>
+      <button class="btn btn-primary" onclick="procesarArchivosLote()">Procesar Archivos</button>
+      <div id="loadingLote" style="display:none; margin-top:10px; color:var(--secondary);">Procesando archivos...</div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Formulario de Chequeo -->
+  <div class="modal" id="modalChequeo">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Formulario de Chequeo de Asistencia</h3>
+        <button class="close-btn" onclick="closeModal('modalChequeo'); detenerCamara();">&times;</button>
+      </div>
+      <div class="scanner-box">
+        <h4>Escanear Cédula con Cámara</h4>
+        <button class="btn btn-primary" id="btnEncenderCam" onclick="initCamera()" style="margin: 10px auto;">📷 Encender Cámara</button>
+        <video id="webcam" autoplay playsinline></video>
+        <br>
+        <button class="btn btn-warning" id="btnCapturar" style="margin-top:8px; display:none;" onclick="capturarYScanear()">📸 Capturar Documento</button>
+      </div>
+      <div style="text-align:center;">
+        <p><strong>O ingresa la cédula manualmente:</strong></p>
+        <input type="text" id="inputCedulaChequeo" placeholder="Ej: 31130955" style="width:70%; font-size:1.2rem; text-align:center;" autofocus>
+        <button class="btn btn-success" style="margin-top:10px;" onclick="marcarAsistenciaManual()">Registrar Asistencia</button>
+      </div>
+      <div id="msgChequeo" style="margin-top:15px; text-align:center; font-weight:bold;"></div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Añadir Notas por Alumno -->
+  <div class="modal" id="modalNotas">
+    <div class="modal-content" style="max-width: 850px;">
+      <div class="modal-header">
+        <h3>Registro de Notas por Alumno y Fecha</h3>
+        <button class="close-btn" onclick="closeModal('modalNotas')">&times;</button>
+      </div>
+      <div style="margin-bottom: 15px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+        <div>
+          <label><strong>Fecha de Evaluación:</strong></label>
+          <input type="date" id="inputFechaNota">
         </div>
-    </header>
-
-    <!-- Navegación de Cursos -->
-    <nav class="bg-slate-800/60 border-b border-slate-700/60 sticky top-0 z-50 backdrop-blur-md">
-        <div class="max-w-7xl mx-auto px-4 flex overflow-x-auto space-x-2 py-3">
-            <button onclick="cambiarCurso('mec7')" id="btn-mec7" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-emerald-600 text-white shadow">
-                <i class="fa-solid fa-gears mr-2"></i>7mo Ing. Mecánica (SALTE)
-            </button>
-            <button onclick="cambiarCurso('mec8')" id="btn-mec8" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
-                <i class="fa-solid fa-industry mr-2"></i>8vo Ing. Mecánica (ODDI)
-            </button>
-            <button onclick="cambiarCurso('sis7')" id="btn-sis7" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
-                <i class="fa-solid fa-network-wired mr-2"></i>7mo Ing. Sistemas (Sistémico)
-            </button>
-            <button onclick="cambiarCurso('sis8')" id="btn-sis8" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
-                <i class="fa-solid fa-satellite-dish mr-2"></i>8vo Ing. Sistemas (Mando/Enlace)
-            </button>
+        <div>
+          <label><strong>Concepto / Actividad:</strong></label>
+          <input type="text" id="inputConceptoNota" placeholder="Ej: Parcial 1, Taller, Exposición">
         </div>
-    </nav>
+        <button class="btn btn-primary" onclick="cargarListaParaNotas()">Cargar Lista</button>
+      </div>
+      <div id="contenedorTablaNotas" style="max-height: 400px; overflow-y: auto;">
+        <p style="text-align:center; color:#666;">Seleccione la fecha, concepto y haga clic en "Cargar Lista" para registrar calificaciones.</p>
+      </div>
+    </div>
+  </div>
 
-    <!-- Contenido Principal -->
-    <main class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full space-y-8">
+  <!-- Modal 4: Reportes y Gráficas -->
+  <div class="modal" id="modalReportes">
+    <div class="modal-content" style="max-width:850px;">
+      <div class="modal-header">
+        <h3 id="tituloReporte">Reporte</h3>
+        <button class="close-btn" onclick="closeModal('modalReportes')">&times;</button>
+      </div>
+      <div id="contenidoReporte"></div>
+    </div>
+  </div>
 
-        <!-- Sección de Información del Curso Activo -->
-        <section id="info-curso" class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-            <!-- Se llena dinámicamente con JavaScript -->
-        </section>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-        <!-- Sistema de Evaluación Rápida y Registro de Notas -->
-        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-slate-700">
-                <div>
-                    <h2 class="text-xl font-bold text-white flex items-center">
-                        <i class="fa-solid fa-clipboard-user text-emerald-400 mr-2"></i> Control de Asistencia y Evaluaciones (Escala 0-20)
-                    </h2>
-                    <p class="text-sm text-slate-400">Asigne el porcentaje evaluado hoy y registre calificaciones con acumulación ponderada automática.</p>
-                </div>
-                <button onclick="iniciarEvaluacionDia()" class="mt-4 md:mt-0 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg transition flex items-center space-x-2">
-                    <i class="fa-solid fa-pen-to-square"></i>
-                    <span>📝 Cargar Notas y Asistencia (Día de Clase)</span>
-                </button>
-            </div>
+    // URL de conexión con Google Apps Script / Google Drive (Opcional si lo despliega en Drive)
+    const URL_APPS_SCRIPT = ""; 
 
-            <!-- Tabla de Estudiantes / Calificaciones -->
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse text-sm">
-                    <thead>
-                        <tr class="bg-slate-700/50 text-slate-300 uppercase text-xs tracking-wider">
-                            <th class="p-3 rounded-l-lg">Cédula</th>
-                            <th class="p-3">Apellidos y Nombres</th>
-                            <th class="p-3 text-center">Asistencia</th>
-                            <th class="p-3 text-center">Evaluado (%)</th>
-                            <th class="p-3 text-center">Nota Última (0-20)</th>
-                            <th class="p-3 text-center">Puntos Acumulados</th>
-                            <th class="p-3 rounded-r-lg text-center">Nota Definitiva</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-estudiantes" class="divide-y divide-slate-700/60">
-                        <!-- Filas de ejemplo precargadas -->
-                        <tr class="hover:bg-slate-700/30 transition">
-                            <td class="p-3 font-mono text-emerald-400">V-28123456</td>
-                            <td class="p-3 font-medium">Rodríguez Pérez, Carlos Luis</td>
-                            <td class="p-3 text-center"><span class="px-2.5 py-1 rounded-full text-xs bg-slate-700 text-slate-300 status-asis">Pendiente</span></td>
-                            <td class="p-3 text-center text-slate-400 val-pct">0%</td>
-                            <td class="p-3 text-center font-mono val-nota">0.0</td>
-                            <td class="p-3 text-center font-mono text-amber-400 val-acum">0.00</td>
-                            <td class="p-3 text-center font-bold text-emerald-400 val-def">0.00</td>
-                        </tr>
-                        <tr class="hover:bg-slate-700/30 transition">
-                            <td class="p-3 font-mono text-emerald-400">V-27987654</td>
-                            <td class="p-3 font-medium">Silva Mendoza, Ana Gabriela</td>
-                            <td class="p-3 text-center"><span class="px-2.5 py-1 rounded-full text-xs bg-slate-700 text-slate-300 status-asis">Pendiente</span></td>
-                            <td class="p-3 text-center text-slate-400 val-pct">0%</td>
-                            <td class="p-3 text-center font-mono val-nota">0.0</td>
-                            <td class="p-3 text-center font-mono text-amber-400 val-acum">0.00</td>
-                            <td class="p-3 text-center font-bold text-emerald-400 val-def">0.00</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+    let seccionesData = {
+      "08S-2422-D1": {
+        materia: "DEFENSA INTEGRAL DE LA NACIÓN VIII",
+        carrera: "INGENIERÍA",
+        semestre: "VIII",
+        alumnos: [
+          { cedula: "31130955", nombre: "RANZENY FABIOLA LEDEZMA CARABALLO", genero: "F" },
+          { cedula: "31201071", nombre: "YEFRAINI INAILE CASTRO BOLIVAR", genero: "F" },
+          { cedula: "30969982", nombre: "JOVANNA CAROLINA SALAZAR ROJAS", genero: "F" },
+          { cedula: "31605935", nombre: "LUIS MIGUEL FREITES SUAREZ", genero: "M" },
+          { cedula: "27441575", nombre: "JOSUÉ SAMUEL SALAZAR BLANCO", genero: "M" },
+          { cedula: "30702092", nombre: "WILSON JESUS BOLIVAR BENITEZ", genero: "M" },
+          { cedula: "31737990", nombre: "LUIS FERNANDO ROPERO GALBAN", genero: "M" },
+          { cedula: "29815867", nombre: "KEIYI JOSE FARIAS GALBAN", genero: "M" },
+          { cedula: "17482206", nombre: "JOHAN RICARDO ESCOBAR VERENZUELA", genero: "M" },
+          { cedula: "20780987", nombre: "JOSEBEL TIBIZAY SANCHEZ LOPEZ", genero: "F" },
+          { cedula: "30526997", nombre: "GILBERT JESUS HERNANDEZ UGAS", genero: "M" },
+          { cedula: "24806967", nombre: "JESUS ANTONIO DABUEMA FLORES", genero: "M" },
+          { cedula: "30041620", nombre: "EDIMAR DEL VALLE DIAZ GARCÍA", genero: "F" },
+          { cedula: "29911229", nombre: "RAYMARIS YOGLEIDIS GUAICARA HERNANDEZ", genero: "F" },
+          { cedula: "30260391", nombre: "YEREMYTH ROGER MARCANO MENDOZA", genero: "M" },
+          { cedula: "27294460", nombre: "ARIANGGELA ALBARIS MENDOZA CEDENO", genero: "F" },
+          { cedula: "18755074", nombre: "SARAI EDAILY BOLIVAR DIAZ", genero: "F" },
+          { cedula: "30225662", nombre: "JHOM LUIS LÓPEZ ORTEGA", genero: "M" },
+          { cedula: "31201616", nombre: "ABRAHAM JOSE VALLEJO SULBARAN", genero: "M" },
+          { cedula: "29777718", nombre: "DERWIN JESUS PALMA VARGAS", genero: "M" },
+          { cedula: "31044966", nombre: "JOSÉ ALEJANDRO GONZÁLEZ CUADROS", genero: "M" },
+          { cedula: "31131530", nombre: "RAICHELLE ADIARIS DEL CARMEN MORENO VEROES", genero: "F" },
+          { cedula: "30369720", nombre: "JORGE GABRIEL ROMERO MELGAREJO", genero: "M" },
+          { cedula: "31291101", nombre: "CARLOS DANIEL CALDERON BRITO", genero: "M" },
+          { cedula: "30632683", nombre: "ARGENIS GABRIEL MARTINEZ ECHARRY", genero: "M" },
+          { cedula: "30632791", nombre: "RAIBERTH JOEL LONGA LAVENTIUR", genero: "M" },
+          { cedula: "31201193", nombre: "MIGUEL DAVID BRICENO BETHELMY", genero: "M" },
+          { cedula: "30022809", nombre: "GREGSON GABRIEL VELASQUEZ SEIJAS", genero: "M" },
+          { cedula: "31428101", nombre: "ROXBELIS ANDREINA BERMUDEZ ALEJOS", genero: "F" },
+          { cedula: "21193401", nombre: "DAVID JOSE ALVAREZ DE LUGO LAREZ", genero: "M" },
+          { cedula: "24801980", nombre: "ANTONIO JOSE PEREZ SALAZAR", genero: "M" },
+          { cedula: "30969427", nombre: "JERRY JOSÉ QUINTANA RAMOS", genero: "M" },
+          { cedula: "30314966", nombre: "ALEX ADRIAN BENEDICT FRANCO NIETO", genero: "M" },
+          { cedula: "31373223", nombre: "NELMARYS ANDERLYN CASTILLO ROJAS", genero: "F" },
+          { cedula: "29939478", nombre: "DAVID ALEJANDRO CANELONES CANELONES", genero: "M" },
+          { cedula: "30353831", nombre: "MAIKELLYS INMACULADA ROMERO URDAΝΕΤΑ", genero: "F" },
+          { cedula: "19914977", nombre: "CARLOS ANDRES PALACIOS MΕΝΑ", genero: "M" },
+          { cedula: "16310429", nombre: "ALEJANDRINA MARÍA PACHANO CASTRO", genero: "F" }
+        ]
+      },
+      "07S-2422-D1": {
+        materia: "DEFENSA INTEGRAL DE LA NACIÓN VII",
+        carrera: "INGENIERÍA",
+        semestre: "VII",
+        alumnos: [
+          { cedula: "30702099", nombre: "YARIHANNA YUDUARKELYS IRIARTE SILVA", genero: "F" },
+          { cedula: "20005196", nombre: "RODELYS ANGEL RODRIGUEZ LEZAMA", genero: "F" },
+          { cedula: "28184678", nombre: "ROGER MICHAEL ACEVEDO NAVARRO", genero: "M" },
+          { cedula: "30041914", nombre: "JUAN ALFONZO BLANCO MERLO", genero: "M" },
+          { cedula: "17484711", nombre: "MARIO GUILLERMO SANCHEZ BASTARDO", genero: "M" },
+          { cedula: "30824949", nombre: "YEILYN CAROLINA SALAZAR PERDOMO", genero: "F" },
+          { cedula: "30702636", nombre: "LUIS ALEJANDRO CHACÓN GARRIDO", genero: "M" },
+          { cedula: "13572567", nombre: "GERMAYN JOSE CASTILLO COVA", genero: "M" },
+          { cedula: "28263739", nombre: "YENIRETH DANIELA URBINA RIOS", genero: "F" },
+          { cedula: "30456985", nombre: "ANTHONY JESÚS MOREL PÉREZ", genero: "M" },
+          { cedula: "14313003", nombre: "ALEXANDER JESUS TORTOZA RONDON", genero: "M" },
+          { cedula: "31379864", nombre: "JEYMARE JERELIS MENDOZA RODRIGUEZ", genero: "F" },
+          { cedula: "31531662", nombre: "GIOFRANNY GIOVANNA COLINA LEÓN", genero: "F" },
+          { cedula: "31980455", nombre: "ISABEL YUGEISY ALFONZO PARRA", genero: "F" },
+          { cedula: "24803617", nombre: "NELSON ANDRES CARRILLO MARCANO", genero: "M" },
+          { cedula: "31131079", nombre: "YENDER ENRIQUE MORENO GUILLÉN", genero: "M" },
+          { cedula: "31351414", nombre: "ANGELES DEL VALLE GIL TRUJILLO", genero: "F" },
+          { cedula: "29815625", nombre: "BARBARA LEON SILVA", genero: "F" }
+        ]
+      },
+      "08S-2622-D1": {
+        materia: "DEFENSA INTEGRAL DE LA NACIÓN VIII",
+        carrera: "LICENCIATURA / INGENIERÍA",
+        semestre: "VIII",
+        alumnos: [
+          { cedula: "28404300", nombre: "HECTOR LUIS SAEZ DIAZ", genero: "M" },
+          { cedula: "30702937", nombre: "NILSSON GABRIEL PESTANO MADERA", genero: "M" },
+          { cedula: "30225765", nombre: "ADONAI NICANOR ALVARADO ZAMBRANO", genero: "M" },
+          { cedula: "31201833", nombre: "MAIKOL ALEXANDER ACEVEDO MEDINA", genero: "M" },
+          { cedula: "28314311", nombre: "YSA GABRIELA GOROZABEL RODRIGUEZ", genero: "F" },
+          { cedula: "28314475", nombre: "FERNANDO MANUEL DA SILVA GUILARTE", genero: "M" },
+          { cedula: "30824620", nombre: "DANIELA JOSE CASTRO ESCOBAR", genero: "F" },
+          { cedula: "31428219", nombre: "GABRIEL EDUARDO AGUILERA GÓMEZ", genero: "M" },
+          { cedula: "30824541", nombre: "ALEJANDRO JOSE ALGARIN AGUILERA", genero: "M" },
+          { cedula: "31508245", nombre: "LIZBELIS ODALI SUAREZ CHAPARRO", genero: "F" },
+          { cedula: "30170441", nombre: "NAYEULIS KRISMAR ECHARRY MARCANO", genero: "F" },
+          { cedula: "28769007", nombre: "EDUAR DANIEL PALMA MAZA", genero: "M" },
+          { cedula: "30527005", nombre: "JORNELYS SIMONEY GOMEZ CHIRINOS", genero: "F" },
+          { cedula: "30970022", nombre: "LOYNER SAMUEL FERNANDEZ MARVAL", genero: "M" },
+          { cedula: "31748686", nombre: "LUIS JAVIER VASQUEZ CARABALLO", genero: "M" },
+          { cedula: "31291085", nombre: "ALEJANDRO JOSÉ PEREIRA CISNEROS", genero: "M" },
+          { cedula: "30700256", nombre: "YETZABETH SINAHIT SCORZA CANELA", genero: "F" },
+          { cedula: "30226249", nombre: "ABRAHAN JESUS SALAZAR BERMUDEZ", genero: "M" },
+          { cedula: "31380267", nombre: "YHON JAIRO VIVAS SANDOVAL", genero: "M" },
+          { cedula: "31201259", nombre: "ELIANA JULIETH JIMENEZ CARDENAS", genero: "F" },
+          { cedula: "30435807", nombre: "ALEXANDER ISAIAS ZAPATA MAYORA", genero: "M" },
+          { cedula: "31201006", nombre: "MAIKOL DANIEL SANCHEZ FERNANDEZ", genero: "M" },
+          { cedula: "31748701", nombre: "NATALY ALEJANDRA PINANGO ALVAREZ", genero: "F" },
+          { cedula: "31201437", nombre: "WLADIUSCA ANTHONELA GARRIDO CEDEÑO", genero: "F" },
+          { cedula: "31201173", nombre: "SHIRLEY MELISSA FERNANDEZ AVILA", genero: "F" },
+          { cedula: "30226219", nombre: "CARLOS LUIS COLINA SALAZAR", genero: "M" },
+          { cedula: "29815324", nombre: "ADRIAN GABRIEL MORENO HERNANDEZ", genero: "M" },
+          { cedula: "30824746", nombre: "NELVIS LEONARDO FLORES PINERO", genero: "M" },
+          { cedula: "31428157", nombre: "SARYS ESTEFANY ALDANA FIGUEROA", genero: "F" },
+          { cedula: "30969660", nombre: "WILDER ALEXANDER GUERRERO ECHARRY", genero: "M" },
+          { cedula: "27965139", nombre: "CRISLEY NAYELI PIRELA GONZALEZ", genero: "F" },
+          { cedula: "31044619", nombre: "MARIA GABRIELA IZAGUIRRE GONZALEZ", genero: "F" },
+          { cedula: "30456195", nombre: "KATTY ROSELY ECHARRY LAYA", genero: "F" }
+        ]
+      }
+    };
 
-    </main>
+    let registroAsistencias = {};
+    let registroNotas = {}; // Formato: { "YYYY-MM-DD": { "seccion": { "cedula": nota } } }
+    let seccionActual = "08S-2422-D1";
+    let mediaStream = null;
 
-    <!-- Footer -->
-    <footer class="bg-slate-800 border-t border-slate-700 py-6 text-center text-xs text-slate-400">
-        <p>Universidad Nacional Experimental de la Fuerza Armada (UNEFA) • Núcleo Vargas</p>
-        <p class="mt-1">Plataforma Educativa Automatizada para la Cátedra de Defensa Integral de la Nación</p>
-    </footer>
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-    <!-- Lógica JavaScript Interactiva -->
-    <script>
-        // Base de Datos de Contenidos por Curso
-        const cursosData = {
-            mec7: {
-                titulo: "7mo Semestre - Ingeniería Mecánica",
-                materia: "Defensa Integral VII",
-                enfoque: "Sistema de Apoyo Logístico Territorial (SALTE) y Clases de Abastecimiento.",
-                descripcion: "Estudio técnico de intendencia, combustibles (Clase III), sanidad, material/repuestos (Clase V) y operaciones logísticas territoriales aplicadas a la ingeniería mecánica.",
-                autores: "Sun Tzu (Logística y Suministro), Carl von Clausewitz (Esfuerzo Logístico), Henry Fayol (Control de Operaciones)."
-            },
-            mec8: {
-                titulo: "8vo Semestre - Ingeniería Mecánica",
-                materia: "Defensa Integral VIII",
-                enfoque: "Planificación, Conducción y Apoyo Logístico de la Lucha No Armada.",
-                descripcion: "Integración de la infraestructura industrial y mecánica con los Órganos de Dirección de la Defensa Integral (ODDI) ante situaciones de contingencia y emergencia.",
-                autores: "Antoine-Henri Jomini (Líneas de Operación), Mary Parker Follett (Coordinación y Mando)."
-            },
-            sis7: {
-                titulo: "7mo Semestre - Ingeniería de Sistemas",
-                materia: "Defensa Integral VII",
-                enfoque: "Fundamentos Sistémicos, Ciberdefensa y Arquitectura de Datos Territorial.",
-                descripcion: "Análisis de sistemas complejos, seguridad de la información, soberanía tecnológica y resiliencia de infraestructuras críticas de red.",
-                autores: "Ludwig von Bertalanffy (Teoría General de Sistemas), Norbert Wiener (Cibernética)."
-            },
-            sis8: {
-                titulo: "8vo Semestre - Ingeniería de Sistemas",
-                materia: "Defensa Integral VIII",
-                enfoque: "Arquitectura del Mando, Malla Territorial y Sistemas de Información/Enlace.",
-                descripcion: "Diseño de redes de comunicación táctica, sistemas de comando y control automatizados, y flujos de información para la toma de decisiones estratégicas.",
-                autores: "Henry Mintzberg (Estructura Organizacional), David Kilcullen (Redes y Contrainsurgencia Moderna)."
-            }
+    window.onload = function() {
+      document.getElementById('inputFechaNota').valueAsDate = new Date();
+      renderTabs();
+      renderTabla();
+    };
+
+    function renderTabs() {
+      const container = document.getElementById("tabsSecciones");
+      container.innerHTML = "";
+      Object.keys(seccionesData).forEach(sec => {
+        const btn = document.createElement("button");
+        btn.className = "tab-btn " + (sec === seccionActual ? "active" : "");
+        btn.innerText = "Sección " + sec;
+        btn.onclick = () => {
+          seccionActual = sec;
+          renderTabs();
+          renderTabla();
         };
+        container.appendChild(btn);
+      });
+    }
 
-        function cambiarCurso(idCurso) {
-            // Cambiar estilos de botones
-            document.querySelectorAll('.curso-btn').forEach(btn => {
-                btn.classList.remove('bg-emerald-600', 'text-white', 'shadow');
-                btn.classList.add('bg-slate-700', 'text-slate-300');
-            });
-            const activo = document.getElementById('btn-' + idCurso);
-            activo.classList.remove('bg-slate-700', 'text-slate-300');
-            activo.classList.add('bg-emerald-600', 'text-white', 'shadow');
+    function renderTabla() {
+      const tbody = document.getElementById("tablaAlumnosBody");
+      tbody.innerHTML = "";
+      let lista = [...seccionesData[seccionActual].alumnos];
+      
+      const genFiltro = document.getElementById("selectGenero").value;
+      if (genFiltro !== "todos") lista = lista.filter(a => a.genero === genFiltro);
 
-            // Renderizar información
-            const c = cursosData[idCurso];
-            document.getElementById('info-curso').innerHTML = `
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
-                    <div>
-                        <span class="bg-emerald-500/20 text-emerald-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">${c.materia}</span>
-                        <h2 class="text-2xl font-bold text-white mt-2">${c.titulo}</h2>
-                        <p class="text-emerald-300 font-medium text-sm mt-1">${c.enfoque}</p>
-                    </div>
-                </div>
-                <p class="text-slate-300 text-sm mt-4 leading-relaxed">${c.descripcion}</p>
-                <div class="mt-4 pt-4 border-t border-slate-700 flex items-center space-x-2 text-xs text-slate-400">
-                    <i class="fa-solid fa-book-bookmark text-emerald-400"></i>
-                    <span><strong>Referencia Teórica:</strong> ${c.autores}</span>
-                </div>
-            `;
+      const busqueda = document.getElementById("buscarInput").value.toLowerCase();
+      if (busqueda) lista = lista.filter(a => a.nombre.toLowerCase().includes(busqueda) || a.cedula.includes(busqueda));
+
+      const orden = document.getElementById("selectOrden").value;
+      lista.sort((a, b) => {
+        if (orden === "cedula_asc") return parseInt(a.cedula) - parseInt(b.cedula);
+        if (orden === "cedula_desc") return parseInt(b.cedula) - parseInt(a.cedula);
+        if (orden === "nombre_asc") return a.nombre.localeCompare(b.nombre);
+        if (orden === "genero") return a.genero.localeCompare(b.genero);
+      });
+
+      const infoSec = seccionesData[seccionActual];
+      lista.forEach((al, index) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td><strong>V-${al.cedula}</strong></td>
+          <td>${al.nombre}</td>
+          <td>${al.genero === 'F' ? 'Femenino' : 'Masculino'}</td>
+          <td>${infoSec.semestre}</td>
+          <td>${infoSec.carrera}</td>
+          <td>${infoSec.materia}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function ordenarYFiltrar() { renderTabla(); }
+
+    // --- MÓDULO DE NOTAS ---
+    function cargarListaParaNotas() {
+      const fecha = document.getElementById('inputFechaNota').value;
+      const concepto = document.getElementById('inputConceptoNota').value.trim();
+      const contenedor = document.getElementById('contenedorTablaNotas');
+
+      if (!fecha || !concepto) {
+        alert("Por favor seleccione una fecha e indique el concepto de la evaluación.");
+        return;
+      }
+
+      const alumnos = seccionesData[seccionActual].alumnos;
+      if (!registroNotas[fecha]) registroNotas[fecha] = {};
+      if (!registroNotas[fecha][seccionActual]) registroNotas[fecha][seccionActual] = {};
+
+      let html = `
+        <p><strong>Evaluación:</strong> ${concepto} (${fecha}) - <strong>Sección:</strong> ${seccionActual}</p>
+        <table>
+          <thead>
+            <tr><th>Cédula</th><th>Alumno</th><th>Nota (0 - 20)</th></tr>
+          </thead>
+          <tbody>
+      `;
+
+      alumnos.forEach(al => {
+        let notaActual = registroNotas[fecha][seccionActual][al.cedula] !== undefined ? registroNotas[fecha][seccionActual][al.cedula] : "";
+        html += `
+          <tr>
+            <td>V-${al.cedula}</td>
+            <td>${al.nombre}</td>
+            <td>
+              <input type="number" min="0" max="20" step="0.1" value="${notaActual}" onchange="guardarNota('${fecha}', '${al.cedula}', this.value)" style="width: 80px;">
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table>`;
+      contenedor.innerHTML = html;
+    }
+
+    function guardarNota(fecha, cedula, valor) {
+      if (!registroNotas[fecha]) registroNotas[fecha] = {};
+      if (!registroNotas[fecha][seccionActual]) registroNotas[fecha][seccionActual] = {};
+      registroNotas[fecha][seccionActual][cedula] = parseFloat(valor) || 0;
+    }
+
+    // --- CÁMARA Y CHEQUEO DE ASISTENCIA ---
+    function initCamera() {
+      const video = document.getElementById("webcam");
+      const btnCam = document.getElementById("btnEncenderCam");
+      const btnCap = document.getElementById("btnCapturar");
+      const msg = document.getElementById("msgChequeo");
+
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+          .then(stream => {
+            mediaStream = stream;
+            video.srcObject = stream;
+            video.style.display = "block";
+            btnCam.style.display = "none";
+            btnCap.style.display = "inline-block";
+            msg.style.color = "var(--success)";
+            msg.innerText = "📷 Cámara activa. Apunte a la cédula.";
+          })
+          .catch(err => {
+            msg.style.color = "var(--danger)";
+            msg.innerText = "❌ Error de cámara: Permiso denegado.";
+          });
+      } else {
+        msg.style.color = "var(--danger)";
+        msg.innerText = "❌ Navegador no soporta cámara.";
+      }
+    }
+
+    function detenerCamara() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+      const video = document.getElementById("webcam");
+      video.style.display = "none";
+      document.getElementById("btnEncenderCam").style.display = "inline-block";
+      document.getElementById("btnCapturar").style.display = "none";
+      document.getElementById("msgChequeo").innerText = "";
+    }
+
+    async function capturarYScanear() {
+      const video = document.getElementById("webcam");
+      const msg = document.getElementById("msgChequeo");
+      
+      if (!video.srcObject) return;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      msg.style.color = "var(--warning)";
+      msg.innerText = "⏳ Procesando documento por OCR...";
+      
+      try {
+        const result = await Tesseract.recognize(canvas, 'spa');
+        const match = result.data.text.match(/\d{7,8}/);
+
+        if (match) {
+          document.getElementById("inputCedulaChequeo").value = match[0];
+          marcarAsistenciaManual();
+        } else {
+          msg.style.color = "var(--danger)";
+          msg.innerText = "❌ No se detectó cédula clara.";
         }
+      } catch (e) {
+        msg.style.color = "var(--danger)";
+        msg.innerText = "❌ Error OCR.";
+      }
+    }
 
-        // Cargar curso por defecto al abrir
-        cambiarCurso('mec7');
+    function marcarAsistenciaManual() {
+      const ced = document.getElementById("inputCedulaChequeo").value.trim();
+      const msg = document.getElementById("msgChequeo");
+      if (!ced) return;
 
-        // Función interactiva para Registrar Asistencia y Notas el Día de Clase
-        function iniciarEvaluacionDia() {
-            let fecha = prompt("Ingrese la fecha de la evaluación (DD/MM/AAAA):", "17/10/2026");
-            if (!fecha) return;
+      const hoy = new Date().toISOString().split("T")[0];
+      if (!registroAsistencias[hoy]) registroAsistencias[hoy] = {};
+      if (!registroAsistencias[hoy][seccionActual]) registroAsistencias[hoy][seccionActual] = [];
 
-            let pctInput = prompt("Ingrese el porcentaje evaluado en la dinámica de hoy (Ej: 10 para 10%):", "10");
-            let porcentaje = parseFloat(pctInput);
-            if (isNaN(porcentaje) || porcentaje <= 0) {
-                alert("Porcentaje inválido.");
-                return;
-            }
-            let factorPct = porcentaje / 100;
+      const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
+      if (!alumno) {
+        msg.style.color = "var(--danger)";
+        msg.innerText = "❌ Cédula " + ced + " no pertenece a esta sección.";
+        return;
+      }
 
-            let filas = document.querySelectorAll("#tabla-estudiantes tr");
-            filas.forEach((fila) => {
-                let nombre = fila.querySelector("td:nth-child(2)").innerText;
-                let asistencia = confirm(`¿El estudiante:\n${nombre}\nASISTIÓ a la clase del ${fecha}?`);
-                
-                let spanAsis = fila.querySelector(".status-asis");
-                let tdPct = fila.querySelector(".val-pct");
-                let tdNota = fila.querySelector(".val-nota");
-                let tdAcum = fila.querySelector(".val-acum");
-                let tdDef = fila.querySelector(".val-def");
+      if (registroAsistencias[hoy][seccionActual].includes(ced)) {
+        msg.style.color = "var(--warning)";
+        msg.innerText = "ℹ️ Ya tiene asistencia hoy: " + alumno.nombre;
+      } else {
+        registroAsistencias[hoy][seccionActual].push(ced);
+        msg.style.color = "var(--success)";
+        msg.innerText = "✅ Asistencia registrada: " + alumno.nombre;
+      }
+      document.getElementById("inputCedulaChequeo").value = "";
+    }
 
-                if (asistencia) {
-                    spanAsis.className = "px-2.5 py-1 rounded-full text-xs bg-emerald-500/20 text-emerald-400 status-asis";
-                    spanAsis.innerText = "Presente";
+    // --- REPORTES Y GRÁFICAS ---
+    function verAsistenciaDia() {
+      const hoy = new Date().toISOString().split("T")[0];
+      const presentesList = (registroAsistencias[hoy] && registroAsistencias[hoy][seccionActual]) || [];
+      const totalAlumnos = seccionesData[seccionActual].alumnos.length;
+      const totalPresentes = presentesList.length;
+      const totalFaltantes = totalAlumnos - totalPresentes;
 
-                    let notaInput = prompt(`Ingrese la calificación (0 a 20) para ${nombre}:`, "18");
-                    let notaVal = parseFloat(notaInput);
-                    if (isNaN(notaVal) || notaVal < 0) notaVal = 0;
-                    if (notaVal > 20) notaVal = 20;
+      document.getElementById("tituloReporte").innerText = "Asistencia del Día (" + hoy + ")";
+      document.getElementById("contenidoReporte").innerHTML = `
+        <div style="text-align:center; margin-bottom:15px;">
+          <p><strong>Total:</strong> ${totalAlumnos} | <strong style="color:var(--success);">Presentes:</strong> ${totalPresentes} | <strong style="color:var(--danger);">Faltantes:</strong> ${totalFaltantes}</p>
+        </div>
+        <div style="max-width:320px; margin:0 auto;"><canvas id="chartPieDia"></canvas></div>
+      `;
+      openModal("modalReportes");
 
-                    tdPct.innerText = porcentaje + "%";
-                    tdNota.innerText = notaVal.toFixed(1);
+      setTimeout(() => {
+        new Chart(document.getElementById("chartPieDia"), {
+          type: 'pie',
+          data: {
+            labels: ['Presentes', 'Faltantes'],
+            datasets: [{ data: [totalPresentes, totalFaltantes], backgroundColor: ['#28a745', '#dc3545'] }]
+          }
+        });
+      }, 200);
+    }
 
-                    let acumuladoPrevio = parseFloat(tdAcum.innerText) || 0;
-                    let puntosNuevos = notaVal * factorPct;
-                    let nuevoAcumulado = acumuladoPrevio + puntosNuevos;
+    function verGraficasEvolucion() {
+      document.getElementById("tituloReporte").innerText = "Evolución de Asistencia y Rendimiento";
+      document.getElementById("contenidoReporte").innerHTML = `
+        <div class="stats-grid">
+          <div class="card"><h4>Evolución Diaria</h4><canvas id="chartLineEvolucion"></canvas></div>
+          <div class="card"><h4>Rendimiento Académico</h4><canvas id="chartBarPorcentajes"></canvas></div>
+        </div>
+      `;
+      openModal("modalReportes");
 
-                    tdAcum.innerText = nuevoAcumulado.toFixed(2);
-                    tdDef.innerText = nuevoAcumulado.toFixed(2); // Nota definitiva escalada proporcionalmente
-                } else {
-                    spanAsis.className = "px-2.5 py-1 rounded-full text-xs bg-rose-500/20 text-rose-400 status-asis";
-                    spanAsis.innerText = "Ausente";
-                    tdPct.innerText = porcentaje + "%";
-                    tdNota.innerText = "0.0";
-                }
-            });
+      const fechas = Object.keys(registroAsistencias);
+      const dataPresentes = [], dataFaltantes = [];
+      const totalAl = seccionesData[seccionActual].alumnos.length;
 
-            alert(`¡Evaluación del ${fecha} registrada y acumulada con éxito!`);
+      fechas.forEach(f => {
+        let pres = (registroAsistencias[f][seccionActual] || []).length;
+        dataPresentes.push(pres);
+        dataFaltantes.push(totalAl - pres);
+      });
+
+      setTimeout(() => {
+        new Chart(document.getElementById("chartLineEvolucion"), {
+          type: 'line',
+          data: {
+            labels: fechas.length ? fechas : ['Hoy'],
+            datasets: [
+              { label: 'Presentes', data: dataPresentes.length ? dataPresentes : [0], borderColor: '#28a745', fill: false },
+              { label: 'Faltantes', data: dataFaltantes.length ? dataFaltantes : [totalAl], borderColor: '#dc3545', fill: false }
+            ]
+          }
+        });
+        new Chart(document.getElementById("chartBarPorcentajes"), {
+          type: 'bar',
+          data: {
+            labels: ['Aprobados (>= 10)', 'Reprobados (< 10)'],
+            datasets: [{ label: 'Alumnos', data: [totalAl, 0], backgroundColor: ['#17a2b8', '#dc3545'] }]
+          }
+        });
+      }, 200);
+    }
+
+    async function procesarArchivosLote() {
+      const files = document.getElementById("inputLoteFiles").files;
+      if (!files.length) return alert("Selecciona al menos un archivo.");
+      document.getElementById("loadingLote").style.display = "block";
+      for (let file of files) {
+        if (file.type === "application/pdf") await procesarPDF(file);
+        else await procesarImagenOCR(file);
+      }
+      document.getElementById("loadingLote").style.display = "none";
+      closeModal("modalCarga");
+      renderTabs();
+      renderTabla();
+      alert("¡Archivos procesados e incorporados con éxito!");
+    }
+
+    async function procesarPDF(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let textContent = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const text = await page.getTextContent();
+        textContent += text.items.map(s => s.str).join(" ") + " ";
+      }
+      extraerYAgregarAlumnos(textContent, file.name);
+    }
+
+    async function procesarImagenOCR(file) {
+      const result = await Tesseract.recognize(file, 'spa');
+      extraerYAgregarAlumnos(result.data.text, file.name);
+    }
+
+    function extraerYAgregarAlumnos(texto, nombreArchivo) {
+      let secMatch = texto.match(/0\d[S|5]-\d+-[D|N]\d/i) || nombreArchivo.match(/0\d[S|5]-\d+-[D|N]\d/i);
+      let secName = secMatch ? secMatch[0].toUpperCase().replace("5", "S") : "SEC_" + (Object.keys(seccionesData).length + 1);
+
+      if (!seccionesData[secName]) {
+        seccionesData[secName] = { materia: "MATERIA NUEVA", carrera: "GENERAL", semestre: "I", alumnos: [] };
+      }
+
+      const regexCedula = /V?-?(\d{7,8})/g;
+      let match;
+      while ((match = regexCedula.exec(texto)) !== null) {
+        let ced = match[1];
+        if (!seccionesData[secName].alumnos.some(a => a.cedula === ced)) {
+          seccionesData[secName].alumnos.push({ cedula: ced, nombre: "ALUMNO " + ced, genero: "M" });
         }
-    </script>
+      }
+    }
+  </script>
 </body>
 </html>

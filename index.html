@@ -335,7 +335,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     // URL de conexión con Google Apps Script / Google Drive (Opcional si lo despliega en Drive)
-    const URL_APPS_SCRIPT = ""; 
+    const URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycby6WbxVIq_T522UdzCwGetx5DudpRz5Se_bwQdkLDUueOYhbaYqPqzfAyP_MiwgSSGlxg/exec"; 
 
     let seccionesData = {
       "08S-2422-D1": {
@@ -603,7 +603,19 @@
       document.getElementById("btnCapturar").style.display = "none";
       document.getElementById("msgChequeo").innerText = "";
     }
-
+async function enviarAlDrive(payload) {
+  if (!URL_APPS_SCRIPT) return;
+  try {
+    await fetch(URL_APPS_SCRIPT, {
+      method: "POST",
+      mode: "no-cors", // Evita bloqueos de seguridad del navegador
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    console.error("Error al sincronizar con Google Drive:", e);
+  }
+}
     async function capturarYScanear() {
       const video = document.getElementById("webcam");
       const msg = document.getElementById("msgChequeo");

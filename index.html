@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defensa Integral de la Nación | Portal Académico - Ing. Eddy Bolívar</title>
+    <!-- Tailwind CSS para diseño moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col">
+
+    <!-- Header Institucional -->
+    <header class="bg-slate-800 border-b border-slate-700 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center space-x-4 mb-4 md:mb-0">
+                <div class="bg-emerald-600 p-3 rounded-xl shadow-md">
+                    <i class="fa-solid fa-shield-halved text-2xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-wide">Defensa Integral de la Nación</h1>
+                    <p class="text-xs text-slate-400 uppercase tracking-widest">UNEFA • Núcleo Vargas | Facilitador: Ing. Eddy Bolívar</p>
+                </div>
+            </div>
+            <div class="bg-slate-700 px-4 py-2 rounded-lg text-sm border border-slate-600 flex items-center space-x-2">
+                <i class="fa-solid fa-calendar-days text-emerald-400"></i>
+                <span>Clase Inaugural: <strong>17 de Octubre, 2026</strong></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navegación de Cursos -->
+    <nav class="bg-slate-800/60 border-b border-slate-700/60 sticky top-0 z-50 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 flex overflow-x-auto space-x-2 py-3">
+            <button onclick="cambiarCurso('mec7')" id="btn-mec7" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-emerald-600 text-white shadow">
+                <i class="fa-solid fa-gears mr-2"></i>7mo Ing. Mecánica (SALTE)
+            </button>
+            <button onclick="cambiarCurso('mec8')" id="btn-mec8" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
+                <i class="fa-solid fa-industry mr-2"></i>8vo Ing. Mecánica (ODDI)
+            </button>
+            <button onclick="cambiarCurso('sis7')" id="btn-sis7" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
+                <i class="fa-solid fa-network-wired mr-2"></i>7mo Ing. Sistemas (Sistémico)
+            </button>
+            <button onclick="cambiarCurso('sis8')" id="btn-sis8" class="curso-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
+                <i class="fa-solid fa-satellite-dish mr-2"></i>8vo Ing. Sistemas (Mando/Enlace)
+            </button>
+        </div>
+    </nav>
+
+    <!-- Contenido Principal -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full space-y-8">
+
+        <!-- Sección de Información del Curso Activo -->
+        <section id="info-curso" class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
+            <!-- Se llena dinámicamente con JavaScript -->
+        </section>
+
+        <!-- Sistema de Evaluación Rápida y Registro de Notas -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-slate-700">
+                <div>
+                    <h2 class="text-xl font-bold text-white flex items-center">
+                        <i class="fa-solid fa-clipboard-user text-emerald-400 mr-2"></i> Control de Asistencia y Evaluaciones (Escala 0-20)
+                    </h2>
+                    <p class="text-sm text-slate-400">Asigne el porcentaje evaluado hoy y registre calificaciones con acumulación ponderada automática.</p>
+                </div>
+                <button onclick="iniciarEvaluacionDia()" class="mt-4 md:mt-0 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg transition flex items-center space-x-2">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    <span>📝 Cargar Notas y Asistencia (Día de Clase)</span>
+                </button>
+            </div>
+
+            <!-- Tabla de Estudiantes / Calificaciones -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-700/50 text-slate-300 uppercase text-xs tracking-wider">
+                            <th class="p-3 rounded-l-lg">Cédula</th>
+                            <th class="p-3">Apellidos y Nombres</th>
+                            <th class="p-3 text-center">Asistencia</th>
+                            <th class="p-3 text-center">Evaluado (%)</th>
+                            <th class="p-3 text-center">Nota Última (0-20)</th>
+                            <th class="p-3 text-center">Puntos Acumulados</th>
+                            <th class="p-3 rounded-r-lg text-center">Nota Definitiva</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-estudiantes" class="divide-y divide-slate-700/60">
+                        <!-- Filas de ejemplo precargadas -->
+                        <tr class="hover:bg-slate-700/30 transition">
+                            <td class="p-3 font-mono text-emerald-400">V-28123456</td>
+                            <td class="p-3 font-medium">Rodríguez Pérez, Carlos Luis</td>
+                            <td class="p-3 text-center"><span class="px-2.5 py-1 rounded-full text-xs bg-slate-700 text-slate-300 status-asis">Pendiente</span></td>
+                            <td class="p-3 text-center text-slate-400 val-pct">0%</td>
+                            <td class="p-3 text-center font-mono val-nota">0.0</td>
+                            <td class="p-3 text-center font-mono text-amber-400 val-acum">0.00</td>
+                            <td class="p-3 text-center font-bold text-emerald-400 val-def">0.00</td>
+                        </tr>
+                        <tr class="hover:bg-slate-700/30 transition">
+                            <td class="p-3 font-mono text-emerald-400">V-27987654</td>
+                            <td class="p-3 font-medium">Silva Mendoza, Ana Gabriela</td>
+                            <td class="p-3 text-center"><span class="px-2.5 py-1 rounded-full text-xs bg-slate-700 text-slate-300 status-asis">Pendiente</span></td>
+                            <td class="p-3 text-center text-slate-400 val-pct">0%</td>
+                            <td class="p-3 text-center font-mono val-nota">0.0</td>
+                            <td class="p-3 text-center font-mono text-amber-400 val-acum">0.00</td>
+                            <td class="p-3 text-center font-bold text-emerald-400 val-def">0.00</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-800 border-t border-slate-700 py-6 text-center text-xs text-slate-400">
+        <p>Universidad Nacional Experimental de la Fuerza Armada (UNEFA) • Núcleo Vargas</p>
+        <p class="mt-1">Plataforma Educativa Automatizada para la Cátedra de Defensa Integral de la Nación</p>
+    </footer>
+
+    <!-- Lógica JavaScript Interactiva -->
+    <script>
+        // Base de Datos de Contenidos por Curso
+        const cursosData = {
+            mec7: {
+                titulo: "7mo Semestre - Ingeniería Mecánica",
+                materia: "Defensa Integral VII",
+                enfoque: "Sistema de Apoyo Logístico Territorial (SALTE) y Clases de Abastecimiento.",
+                descripcion: "Estudio técnico de intendencia, combustibles (Clase III), sanidad, material/repuestos (Clase V) y operaciones logísticas territoriales aplicadas a la ingeniería mecánica.",
+                autores: "Sun Tzu (Logística y Suministro), Carl von Clausewitz (Esfuerzo Logístico), Henry Fayol (Control de Operaciones)."
+            },
+            mec8: {
+                titulo: "8vo Semestre - Ingeniería Mecánica",
+                materia: "Defensa Integral VIII",
+                enfoque: "Planificación, Conducción y Apoyo Logístico de la Lucha No Armada.",
+                descripcion: "Integración de la infraestructura industrial y mecánica con los Órganos de Dirección de la Defensa Integral (ODDI) ante situaciones de contingencia y emergencia.",
+                autores: "Antoine-Henri Jomini (Líneas de Operación), Mary Parker Follett (Coordinación y Mando)."
+            },
+            sis7: {
+                titulo: "7mo Semestre - Ingeniería de Sistemas",
+                materia: "Defensa Integral VII",
+                enfoque: "Fundamentos Sistémicos, Ciberdefensa y Arquitectura de Datos Territorial.",
+                descripcion: "Análisis de sistemas complejos, seguridad de la información, soberanía tecnológica y resiliencia de infraestructuras críticas de red.",
+                autores: "Ludwig von Bertalanffy (Teoría General de Sistemas), Norbert Wiener (Cibernética)."
+            },
+            sis8: {
+                titulo: "8vo Semestre - Ingeniería de Sistemas",
+                materia: "Defensa Integral VIII",
+                enfoque: "Arquitectura del Mando, Malla Territorial y Sistemas de Información/Enlace.",
+                descripcion: "Diseño de redes de comunicación táctica, sistemas de comando y control automatizados, y flujos de información para la toma de decisiones estratégicas.",
+                autores: "Henry Mintzberg (Estructura Organizacional), David Kilcullen (Redes y Contrainsurgencia Moderna)."
+            }
+        };
+
+        function cambiarCurso(idCurso) {
+            // Cambiar estilos de botones
+            document.querySelectorAll('.curso-btn').forEach(btn => {
+                btn.classList.remove('bg-emerald-600', 'text-white', 'shadow');
+                btn.classList.add('bg-slate-700', 'text-slate-300');
+            });
+            const activo = document.getElementById('btn-' + idCurso);
+            activo.classList.remove('bg-slate-700', 'text-slate-300');
+            activo.classList.add('bg-emerald-600', 'text-white', 'shadow');
+
+            // Renderizar información
+            const c = cursosData[idCurso];
+            document.getElementById('info-curso').innerHTML = `
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
+                    <div>
+                        <span class="bg-emerald-500/20 text-emerald-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">${c.materia}</span>
+                        <h2 class="text-2xl font-bold text-white mt-2">${c.titulo}</h2>
+                        <p class="text-emerald-300 font-medium text-sm mt-1">${c.enfoque}</p>
+                    </div>
+                </div>
+                <p class="text-slate-300 text-sm mt-4 leading-relaxed">${c.descripcion}</p>
+                <div class="mt-4 pt-4 border-t border-slate-700 flex items-center space-x-2 text-xs text-slate-400">
+                    <i class="fa-solid fa-book-bookmark text-emerald-400"></i>
+                    <span><strong>Referencia Teórica:</strong> ${c.autores}</span>
+                </div>
+            `;
+        }
+
+        // Cargar curso por defecto al abrir
+        cambiarCurso('mec7');
+
+        // Función interactiva para Registrar Asistencia y Notas el Día de Clase
+        function iniciarEvaluacionDia() {
+            let fecha = prompt("Ingrese la fecha de la evaluación (DD/MM/AAAA):", "17/10/2026");
+            if (!fecha) return;
+
+            let pctInput = prompt("Ingrese el porcentaje evaluado en la dinámica de hoy (Ej: 10 para 10%):", "10");
+            let porcentaje = parseFloat(pctInput);
+            if (isNaN(porcentaje) || porcentaje <= 0) {
+                alert("Porcentaje inválido.");
+                return;
+            }
+            let factorPct = porcentaje / 100;
+
+            let filas = document.querySelectorAll("#tabla-estudiantes tr");
+            filas.forEach((fila) => {
+                let nombre = fila.querySelector("td:nth-child(2)").innerText;
+                let asistencia = confirm(`¿El estudiante:\n${nombre}\nASISTIÓ a la clase del ${fecha}?`);
+                
+                let spanAsis = fila.querySelector(".status-asis");
+                let tdPct = fila.querySelector(".val-pct");
+                let tdNota = fila.querySelector(".val-nota");
+                let tdAcum = fila.querySelector(".val-acum");
+                let tdDef = fila.querySelector(".val-def");
+
+                if (asistencia) {
+                    spanAsis.className = "px-2.5 py-1 rounded-full text-xs bg-emerald-500/20 text-emerald-400 status-asis";
+                    spanAsis.innerText = "Presente";
+
+                    let notaInput = prompt(`Ingrese la calificación (0 a 20) para ${nombre}:`, "18");
+                    let notaVal = parseFloat(notaInput);
+                    if (isNaN(notaVal) || notaVal < 0) notaVal = 0;
+                    if (notaVal > 20) notaVal = 20;
+
+                    tdPct.innerText = porcentaje + "%";
+                    tdNota.innerText = notaVal.toFixed(1);
+
+                    let acumuladoPrevio = parseFloat(tdAcum.innerText) || 0;
+                    let puntosNuevos = notaVal * factorPct;
+                    let nuevoAcumulado = acumuladoPrevio + puntosNuevos;
+
+                    tdAcum.innerText = nuevoAcumulado.toFixed(2);
+                    tdDef.innerText = nuevoAcumulado.toFixed(2); // Nota definitiva escalada proporcionalmente
+                } else {
+                    spanAsis.className = "px-2.5 py-1 rounded-full text-xs bg-rose-500/20 text-rose-400 status-asis";
+                    spanAsis.innerText = "Ausente";
+                    tdPct.innerText = porcentaje + "%";
+                    tdNota.innerText = "0.0";
+                }
+            });
+
+            alert(`¡Evaluación del ${fecha} registrada y acumulada con éxito!`);
+        }
+    </script>
+</body>
+</html>

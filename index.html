@@ -298,7 +298,7 @@
       <hr style="margin:20px 0;">
       <div>
         <h4>Chequear desde una lista formal</h4>
-        <p>Selecciona archivos PDF o fotos de la lista. Revisa las cédulas reconocidas antes de registrar; los duplicados se consolidan automáticamente.</p>
+        <p>Selecciona archivos PDF o fotos de la lista. Se analizarán las páginas y las cédulas manuscritas; revisa el resultado antes de registrar, ya que el OCR puede equivocarse. Los duplicados se consolidan automáticamente.</p>
         <input type="file" id="inputListaChequeo" multiple accept="application/pdf,image/*">
         <button class="btn btn-primary" id="btnProcesarListaChequeo" style="margin-top:10px;" onclick="procesarListaChequeo()">🔎 Leer lista(s)</button>
         <div id="loadingListaChequeo" style="display:none; margin-top:10px; color:var(--secondary);">Leyendo lista(s), esto puede tardar...</div>
@@ -756,7 +756,8 @@ async function enviarAlDrive(payload) {
       try {
         for (const file of files) {
           try {
-            const candidatas = file.type === "application/pdf"
+            const esPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+            const candidatas = esPdf
               ? await leerCedulasPDF(file)
               : await leerCedulasImagen(file);
             candidatas.forEach(ced => {
@@ -784,16 +785,16 @@ async function enviarAlDrive(payload) {
         const contenido = await pagina.getTextContent();
         const textoPagina = contenido.items.map(item => item.str).join(" ");
         extraerCedulas(textoPagina).forEach(ced => cedulas.add(ced));
-        if (!extraerCedulas(textoPagina).length) {
-          const viewport = pagina.getViewport({ scale: 2 });
-          const canvas = document.createElement("canvas");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const contexto = canvas.getContext("2d");
-          if (!contexto) throw new Error("No se pudo preparar una página del PDF para OCR.");
-          await pagina.render({ canvasContext: contexto, viewport }).promise;
-          (await reconocerTexto(canvas)).forEach(ced => cedulas.add(ced));
-        }
+
+        const viewport = pagina.getViewport({ scale: 2.5 });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const contexto = canvas.getContext("2d", { willReadFrequently: true });
+        if (!contexto) throw new Error("No se pudo preparar una página del PDF para OCR.");
+        await pagina.render({ canvasContext: contexto, viewport }).promise;
+        const textoOcr = await reconocerTexto(canvas);
+        extraerCedulas(textoOcr).forEach(ced => cedulas.add(ced));
       }
       return cedulas;
     }
@@ -804,13 +805,16 @@ async function enviarAlDrive(payload) {
 
     async function reconocerTexto(origen) {
       if (typeof Tesseract === "undefined") throw new Error("Tesseract.js no está disponible.");
-      const resultado = await Tesseract.recognize(origen, "spa");
+      const resultado = await Tesseract.recognize(origen, "eng", {
+        tessedit_char_whitelist: "0123456789.- ",
+        tessedit_pageseg_mode: "11"
+      });
       return resultado.data.text;
     }
 
     function extraerCedulas(texto) {
       const cedulas = new Set(texto.match(/\b\d{7,8}\b/g) || []);
-      const agrupadas = texto.matchAll(/\b(?:[VE]\s*[-:]?\s*)?(\d{1,2}(?:[.\s-]\d{3}){2,3})\b/gi);
+      const agrupadas = texto.matchAll(/(?:^|[^\d])((?:\d[\t .-]?){6,7}\d)(?!\d)/g);
       for (const coincidencia of agrupadas) {
         const cedula = coincidencia[1].replace(/\D/g, "");
         if (cedula.length === 7 || cedula.length === 8) cedulas.add(cedula);

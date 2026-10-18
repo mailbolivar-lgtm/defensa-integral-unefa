@@ -471,6 +471,8 @@
     let cameraRequestId = 0;
     let graficasReporte = [];
     let cedulasPendientesChequeo = new Set();
+    const CLAVE_ESTADO_APP = "unefaControlAsistencia_v1";
+    let errorPersistencia = null;
 
     function destruirGraficasReporte() {
       graficasReporte.forEach(chart => chart.destroy());
@@ -481,10 +483,59 @@
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
     window.onload = function() {
+      cargarEstadoGuardado();
       document.getElementById('inputFechaNota').valueAsDate = new Date();
       renderTabs();
       renderTabla();
     };
+
+    function fechaLocalISO(fecha = new Date()) {
+      const anio = fecha.getFullYear();
+      const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+      const dia = String(fecha.getDate()).padStart(2, "0");
+      return `${anio}-${mes}-${dia}`;
+    }
+
+    function cargarEstadoGuardado() {
+      try {
+        const guardado = localStorage.getItem(CLAVE_ESTADO_APP);
+        if (!guardado) return;
+        const estado = JSON.parse(guardado);
+        if (!estado || typeof estado !== "object") throw new Error("El estado guardado no tiene un formato válido.");
+        if (estado.seccionesData && typeof estado.seccionesData === "object" && Object.keys(estado.seccionesData).length) {
+          seccionesData = estado.seccionesData;
+        }
+        if (estado.registroAsistencias && typeof estado.registroAsistencias === "object") {
+          registroAsistencias = estado.registroAsistencias;
+        }
+        if (estado.registroNotas && typeof estado.registroNotas === "object") {
+          registroNotas = estado.registroNotas;
+        }
+        if (estado.seccionActual && seccionesData[estado.seccionActual]) {
+          seccionActual = estado.seccionActual;
+        }
+      } catch (error) {
+        console.error("No se pudieron cargar los datos guardados:", error);
+        alert("No se pudieron cargar los registros guardados en este navegador. Revisa la consola para más detalles.");
+      }
+    }
+
+    function guardarEstadoApp() {
+      try {
+        localStorage.setItem(CLAVE_ESTADO_APP, JSON.stringify({
+          seccionesData,
+          registroAsistencias,
+          registroNotas,
+          seccionActual
+        }));
+        errorPersistencia = null;
+        return true;
+      } catch (error) {
+        console.error("No se pudieron guardar los datos en este navegador:", error);
+        errorPersistencia = error;
+        return false;
+      }
+    }
 
     function renderTabs() {
       const container = document.getElementById("tabsSecciones");
@@ -495,6 +546,7 @@
         btn.innerText = "Sección " + sec;
         btn.onclick = () => {
           seccionActual = sec;
+          guardarEstadoApp();
           renderTabs();
           renderTabla();
         };
@@ -556,6 +608,7 @@
         delete notasFecha[seccionActual];
       });
       seccionActual = Object.keys(seccionesData)[0];
+      guardarEstadoApp();
       renderTabs();
       renderTabla();
       alert("La lista y sus registros asociados fueron eliminados.");
@@ -599,6 +652,7 @@
       });
 
       html += `</tbody></table>`;
+      guardarEstadoApp();
       contenedor.innerHTML = html;
     }
 
@@ -606,6 +660,7 @@
       if (!registroNotas[fecha]) registroNotas[fecha] = {};
       if (!registroNotas[fecha][seccionActual]) registroNotas[fecha][seccionActual] = {};
       registroNotas[fecha][seccionActual][cedula] = parseFloat(valor) || 0;
+      guardarEstadoApp();
     }
 
     // --- CÁMARA Y CHEQUEO DE ASISTENCIA ---
@@ -721,21 +776,24 @@ async function enviarAlDrive(payload) {
         msg.innerText = "ℹ️ Ya tiene asistencia hoy: " + alumno.nombre;
       } else {
         const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
-        msg.style.color = "var(--success)";
-        msg.innerText = "✅ Asistencia registrada: " + alumno.nombre;
+        msg.style.color = errorPersistencia ? "var(--warning)" : "var(--success)";
+        msg.innerText = errorPersistencia
+          ? `⚠️ Asistencia registrada temporalmente para ${alumno.nombre}, pero no se pudo guardar en este navegador.`
+          : "✅ Asistencia registrada: " + alumno.nombre;
       }
       document.getElementById("inputCedulaChequeo").value = "";
     }
 
     function registrarAsistencia(ced) {
-      const hoy = new Date().toISOString().split("T")[0];
+      const hoy = fechaLocalISO();
+      const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
+      if (!alumno) return "no-encontrado";
       if (!registroAsistencias[hoy]) registroAsistencias[hoy] = {};
       if (!registroAsistencias[hoy][seccionActual]) registroAsistencias[hoy][seccionActual] = [];
 
-      const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
-      if (!alumno) return "no-encontrado";
       if (registroAsistencias[hoy][seccionActual].includes(ced)) return "duplicado";
       registroAsistencias[hoy][seccionActual].push(ced);
+      guardarEstadoApp();
       return "registrado";
     }
 
@@ -830,7 +888,7 @@ async function enviarAlDrive(payload) {
 
     function mostrarVistaPreviaChequeo(cantidadLeida, errores) {
       const resultado = document.getElementById("resultadoListaChequeo");
-      const presentes = new Set(registroAsistencias[new Date().toISOString().split("T")[0]]?.[seccionActual] || []);
+      const presentes = new Set(registroAsistencias[fechaLocalISO()]?.[seccionActual] || []);
       const alumnos = Array.from(cedulasPendientesChequeo)
         .map(ced => seccionesData[seccionActual].alumnos.find(alumno => alumno.cedula === ced))
         .filter(Boolean);
@@ -903,101 +961,277 @@ async function enviarAlDrive(payload) {
       cedulasPendientesChequeo.clear();
       document.getElementById("resultadoListaChequeo").innerHTML = "";
       const msg = document.getElementById("msgChequeo");
-      msg.style.color = "var(--success)";
-      msg.innerText = `✅ Se registraron ${nuevos} asistencia(s) nueva(s). Las ya registradas no se duplicaron.`;
+      msg.style.color = errorPersistencia ? "var(--warning)" : "var(--success)";
+      msg.innerText = errorPersistencia
+        ? `⚠️ Se registraron ${nuevos} asistencia(s) en memoria, pero no se pudieron guardar.`
+        : `✅ Se registraron ${nuevos} asistencia(s) nueva(s). Las ya registradas no se duplicaron.`;
       document.getElementById("inputListaChequeo").value = "";
     }
 
     // --- REPORTES Y GRÁFICAS ---
     function verAsistenciaDia() {
-      const hoy = new Date().toISOString().split("T")[0];
-      const presentesList = (registroAsistencias[hoy] && registroAsistencias[hoy][seccionActual]) || [];
-      const totalAlumnos = seccionesData[seccionActual].alumnos.length;
-      const totalPresentes = presentesList.length;
+      const hoy = fechaLocalISO();
+      const presentes = new Set(registroAsistencias[hoy]?.[seccionActual] || []);
+      const alumnos = seccionesData[seccionActual].alumnos;
+      const totalAlumnos = alumnos.length;
+      const totalPresentes = alumnos.filter(alumno => presentes.has(alumno.cedula)).length;
       const totalFaltantes = totalAlumnos - totalPresentes;
-
-      document.getElementById("tituloReporte").innerText = "Asistencia del Día (" + hoy + ")";
       destruirGraficasReporte();
+      document.getElementById("tituloReporte").innerText = `Asistencia del Día (${hoy}) - ${seccionActual}`;
       document.getElementById("contenidoReporte").innerHTML = `
         <div style="text-align:center; margin-bottom:15px;">
           <p><strong>Total:</strong> ${totalAlumnos} | <strong style="color:var(--success);">Presentes:</strong> ${totalPresentes} | <strong style="color:var(--danger);">Faltantes:</strong> ${totalFaltantes}</p>
         </div>
         <div style="max-width:320px; margin:0 auto;"><canvas id="chartPieDia"></canvas></div>
+      <div style="overflow-x:auto; margin-top:20px;"><div id="tablaAsistenciaDia"></div></div>
+      <p id="avisoGrafica" style="color:var(--warning);"></p>
+      <p id="avisoPersistencia" style="color:var(--danger);"></p>
       `;
       openModal("modalReportes");
-
-      if (typeof Chart === "undefined") {
-        document.getElementById("contenidoReporte").innerText = "No se pudo cargar Chart.js para mostrar el reporte.";
-        return;
+      if (errorPersistencia) {
+      document.getElementById("avisoPersistencia").textContent = "Aviso: este navegador no pudo guardar los cambios recientes; podrían perderse al cerrar la página.";
       }
+      const filas = alumnos.map(alumno => [
+      `V-${alumno.cedula}`,
+      alumno.nombre,
+      presentes.has(alumno.cedula) ? "Presente" : "Faltante"
+      ]);
+      document.getElementById("tablaAsistenciaDia").appendChild(
+      crearTablaReporte(["Cédula", "Alumno", "Estado"], filas)
+      );
+      try {
+      if (typeof Chart === "undefined") throw new Error("Chart.js no está disponible.");
       graficasReporte.push(new Chart(document.getElementById("chartPieDia"), {
-          type: 'pie',
-          data: {
-            labels: ['Presentes', 'Faltantes'],
-            datasets: [{ data: [totalPresentes, totalFaltantes], backgroundColor: ['#28a745', '#dc3545'] }]
-          }
-        }));
+        type: "pie",
+        data: {
+          labels: ["Presentes", "Faltantes"],
+          datasets: [{ data: [totalPresentes, totalFaltantes], backgroundColor: ["#28a745", "#dc3545"] }]
+        }
+      }));
+      } catch (error) {
+      console.error("No se pudo mostrar la gráfica de asistencia:", error);
+      dibujarGraficaCircularFallback("chartPieDia", totalPresentes, totalFaltantes);
+      document.getElementById("avisoGrafica").textContent = "Se muestra una gráfica alternativa; la lista completa también está disponible.";
+      }
     }
 
     function verGraficasEvolucion() {
-      document.getElementById("tituloReporte").innerText = "Evolución de Asistencia y Rendimiento";
-      destruirGraficasReporte();
-      document.getElementById("contenidoReporte").innerHTML = `
-        <div class="stats-grid">
-          <div class="card"><h4>Evolución Diaria</h4><canvas id="chartLineEvolucion"></canvas></div>
-          <div class="card"><h4>Rendimiento Académico</h4><canvas id="chartBarPorcentajes"></canvas></div>
-        </div>
-      `;
-      openModal("modalReportes");
-
-      const fechas = Object.keys(registroAsistencias);
-      const dataPresentes = [], dataFaltantes = [];
-      const totalAl = seccionesData[seccionActual].alumnos.length;
-
-      fechas.forEach(f => {
-        let pres = (registroAsistencias[f][seccionActual] || []).length;
-        dataPresentes.push(pres);
-        dataFaltantes.push(totalAl - pres);
+      const alumnos = seccionesData[seccionActual].alumnos;
+      const fechas = Object.keys(registroAsistencias)
+      .filter(fecha => Array.isArray(registroAsistencias[fecha][seccionActual]))
+      .sort();
+      const totalAlumnos = alumnos.length;
+      const presentesPorFecha = fechas.map(fecha => {
+      const presentes = new Set(registroAsistencias[fecha][seccionActual]);
+      return alumnos.filter(alumno => presentes.has(alumno.cedula)).length;
       });
-
-      if (typeof Chart === "undefined") {
-        document.getElementById("contenidoReporte").innerText = "No se pudo cargar Chart.js para mostrar el reporte.";
-        return;
-      }
-
+      const faltantesPorFecha = presentesPorFecha.map(presentes => totalAlumnos - presentes);
       const notasPorAlumno = {};
       Object.values(registroNotas).forEach(notasFecha => {
-        const notasSeccion = notasFecha[seccionActual] || {};
-        Object.entries(notasSeccion).forEach(([cedula, nota]) => {
-          if (!notasPorAlumno[cedula]) notasPorAlumno[cedula] = [];
-          notasPorAlumno[cedula].push(nota);
-        });
+      Object.entries(notasFecha[seccionActual] || {}).forEach(([cedula, valor]) => {
+        const nota = Number(valor);
+        if (Number.isFinite(nota)) (notasPorAlumno[cedula] ||= []).push(nota);
       });
-      let aprobados = 0;
-      let reprobados = 0;
-      Object.values(notasPorAlumno).forEach(notas => {
-        const promedio = notas.reduce((suma, nota) => suma + nota, 0) / notas.length;
-        if (promedio >= 10) aprobados++;
-        else reprobados++;
       });
+      const notasPromedio = Object.values(notasPorAlumno);
+      const aprobados = notasPromedio.filter(notas => notas.reduce((suma, nota) => suma + nota, 0) / notas.length >= 10).length;
+      const reprobados = notasPromedio.length - aprobados;
+      const asistenciasRegistradas = presentesPorFecha.reduce((suma, presentes) => suma + presentes, 0);
+      destruirGraficasReporte();
+      document.getElementById("tituloReporte").innerText = `Gráficas y Acumulados - ${seccionActual}`;
+      const contenido = document.getElementById("contenidoReporte");
+      contenido.innerHTML = `
+      <p><strong>Clases con registros:</strong> ${fechas.length} |
+      <strong>Asistencias acumuladas:</strong> ${asistenciasRegistradas} |
+      <strong>Promedio de asistencia:</strong> ${fechas.length ? (asistenciasRegistradas / (fechas.length * Math.max(totalAlumnos, 1)) * 100).toFixed(1) : "0.0"}%</p>
+      <div class="stats-grid">
+        <div class="card"><h4>Evolución Diaria</h4><canvas id="chartLineEvolucion"></canvas></div>
+        <div class="card"><h4>Notas acumuladas</h4><canvas id="chartBarPorcentajes"></canvas></div>
+      </div>
+      <h4>Asistencia por fecha</h4><div style="overflow-x:auto;"><div id="tablaAsistenciaAcumulada"></div></div>
+      <h4>Acumulado por alumno</h4><div style="overflow-x:auto;"><div id="tablaAlumnosAcumulado"></div></div>
+      <h4>Promedio de notas por alumno</h4><div style="overflow-x:auto;"><div id="tablaNotasAcumuladas"></div></div>
+      <p><strong>Aprobados (promedio ≥ 10):</strong> ${aprobados} |
+      <strong>Reprobados:</strong> ${reprobados} | <strong>Sin notas:</strong> ${alumnos.length - notasPromedio.length}</p>
+      <p id="avisoGrafica" style="color:var(--warning);"></p>
+      <p id="avisoPersistencia" style="color:var(--danger);"></p>
+      `;
+      openModal("modalReportes");
+      if (errorPersistencia) {
+      document.getElementById("avisoPersistencia").textContent = "Aviso: este navegador no pudo guardar los cambios recientes; podrían perderse al cerrar la página.";
+      }
 
+      document.getElementById("tablaAsistenciaAcumulada").appendChild(crearTablaReporte(
+      ["Fecha", "Presentes", "Faltantes", "% asistencia"],
+      fechas.map((fecha, indice) => [
+        fecha,
+        presentesPorFecha[indice],
+        faltantesPorFecha[indice],
+        `${totalAlumnos ? (presentesPorFecha[indice] / totalAlumnos * 100).toFixed(1) : "0.0"}%`
+      ])
+      ));
+      document.getElementById("tablaAlumnosAcumulado").appendChild(crearTablaReporte(
+      ["Cédula", "Alumno", "Asistencias", "Faltas", "% asistencia"],
+      alumnos.map(alumno => {
+        const asistencias = fechas.reduce((cuenta, fecha) =>
+          cuenta + (registroAsistencias[fecha][seccionActual].includes(alumno.cedula) ? 1 : 0), 0);
+        return [
+          `V-${alumno.cedula}`,
+          alumno.nombre,
+          asistencias,
+          fechas.length - asistencias,
+          `${fechas.length ? (asistencias / fechas.length * 100).toFixed(1) : "0.0"}%`
+        ];
+      })
+      ));
+      document.getElementById("tablaNotasAcumuladas").appendChild(crearTablaReporte(
+      ["Cédula", "Alumno", "Evaluaciones", "Promedio"],
+      alumnos.map(alumno => {
+        const notas = notasPorAlumno[alumno.cedula] || [];
+        const promedio = notas.length ? (notas.reduce((suma, nota) => suma + nota, 0) / notas.length).toFixed(1) : "Sin notas";
+        return [`V-${alumno.cedula}`, alumno.nombre, notas.length, promedio];
+      })
+      ));
+
+      try {
+      if (typeof Chart === "undefined") throw new Error("Chart.js no está disponible.");
       graficasReporte.push(new Chart(document.getElementById("chartLineEvolucion"), {
-          type: 'line',
-          data: {
-            labels: fechas.length ? fechas : ['Hoy'],
-            datasets: [
-              { label: 'Presentes', data: dataPresentes.length ? dataPresentes : [0], borderColor: '#28a745', fill: false },
-              { label: 'Faltantes', data: dataFaltantes.length ? dataFaltantes : [totalAl], borderColor: '#dc3545', fill: false }
-            ]
-          }
-        }));
+        type: "line",
+        data: {
+          labels: fechas.length ? fechas : ["Sin registros"],
+          datasets: [
+            { label: "Presentes", data: fechas.length ? presentesPorFecha : [0], borderColor: "#28a745", fill: false },
+            { label: "Faltantes", data: fechas.length ? faltantesPorFecha : [0], borderColor: "#dc3545", fill: false }
+          ]
+        }
+      }));
       graficasReporte.push(new Chart(document.getElementById("chartBarPorcentajes"), {
-          type: 'bar',
-          data: {
-            labels: ['Aprobados (>= 10)', 'Reprobados (< 10)'],
-            datasets: [{ label: 'Alumnos con notas', data: [aprobados, reprobados], backgroundColor: ['#17a2b8', '#dc3545'] }]
-          }
-        }));
+        type: "bar",
+        data: {
+          labels: ["Aprobados", "Reprobados"],
+          datasets: [{ label: "Alumnos con notas", data: [aprobados, reprobados], backgroundColor: ["#17a2b8", "#dc3545"] }]
+        }
+      }));
+      } catch (error) {
+      console.error("No se pudieron mostrar las gráficas de acumulados:", error);
+      destruirGraficasReporte();
+      dibujarGraficaColumnasFallback("chartLineEvolucion", fechas.length ? fechas : ["Sin registros"], [
+        { label: "Presentes", datos: fechas.length ? presentesPorFecha : [0], color: "#28a745" },
+        { label: "Faltantes", datos: fechas.length ? faltantesPorFecha : [0], color: "#dc3545" }
+      ]);
+      dibujarGraficaColumnasFallback("chartBarPorcentajes", ["Aprobados", "Reprobados"], [
+        { label: "Alumnos con notas", datos: [aprobados, reprobados], color: "#17a2b8" }
+      ]);
+      document.getElementById("avisoGrafica").textContent = "Se muestran gráficas alternativas; los acumulados y tablas están disponibles.";
+      }
+    }
+
+    function dibujarGraficaCircularFallback(canvasId, presentes, faltantes) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const total = presentes + faltantes;
+      const porcentajePresentes = total ? presentes / total * 100 : 0;
+      const contenedor = document.createElement("div");
+      contenedor.style.cssText = "max-width:320px;margin:20px auto;";
+      const barra = document.createElement("div");
+      barra.setAttribute("role", "img");
+      barra.setAttribute("aria-label", `${presentes} presentes y ${faltantes} faltantes`);
+      barra.style.cssText = `height:28px;border-radius:6px;background:linear-gradient(to right,#28a745 ${porcentajePresentes}%,#dc3545 ${porcentajePresentes}%);`;
+      const leyenda = document.createElement("p");
+      leyenda.textContent = `Presentes: ${presentes} (${porcentajePresentes.toFixed(1)}%) | Faltantes: ${faltantes} (${(100 - porcentajePresentes).toFixed(1)}%)`;
+      contenedor.append(barra, leyenda);
+      canvas.replaceWith(contenedor);
+    }
+
+    function dibujarGraficaColumnasFallback(canvasId, etiquetas, series) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const namespace = "http://www.w3.org/2000/svg";
+      const ancho = 640;
+      const alto = 260;
+      const margen = { arriba: 20, abajo: 65, izquierda: 35, derecha: 15 };
+      const zonaAncho = ancho - margen.izquierda - margen.derecha;
+      const zonaAlto = alto - margen.arriba - margen.abajo;
+      const maximo = Math.max(1, ...series.flatMap(serie => serie.datos));
+      const grupoAncho = zonaAncho / Math.max(etiquetas.length, 1);
+      const espacioBarra = Math.min(22, grupoAncho / (series.length + 1));
+      const svg = document.createElementNS(namespace, "svg");
+      svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", "Gráfica de barras");
+      svg.style.cssText = "width:100%;height:auto;min-height:180px;";
+      const base = document.createElementNS(namespace, "line");
+      base.setAttribute("x1", margen.izquierda);
+      base.setAttribute("x2", ancho - margen.derecha);
+      base.setAttribute("y1", margen.arriba + zonaAlto);
+      base.setAttribute("y2", margen.arriba + zonaAlto);
+      base.setAttribute("stroke", "#666");
+      svg.appendChild(base);
+      etiquetas.forEach((etiqueta, indice) => {
+      series.forEach((serie, serieIndice) => {
+        const valor = Number(serie.datos[indice]) || 0;
+        const altura = valor / maximo * zonaAlto;
+        const rect = document.createElementNS(namespace, "rect");
+        rect.setAttribute("x", margen.izquierda + indice * grupoAncho + (serieIndice * espacioBarra) + 4);
+        rect.setAttribute("y", margen.arriba + zonaAlto - altura);
+        rect.setAttribute("width", Math.max(3, espacioBarra - 3));
+        rect.setAttribute("height", altura);
+        rect.setAttribute("fill", serie.color);
+        svg.appendChild(rect);
+      });
+      const texto = document.createElementNS(namespace, "text");
+      texto.setAttribute("x", margen.izquierda + indice * grupoAncho + grupoAncho / 2);
+      texto.setAttribute("y", alto - margen.abajo + 18);
+      texto.setAttribute("text-anchor", "middle");
+      texto.setAttribute("font-size", etiquetas.length > 12 ? "8" : "10");
+      texto.textContent = etiqueta.length > 12 ? etiqueta.slice(5) : etiqueta;
+      svg.appendChild(texto);
+      });
+      const leyenda = document.createElement("p");
+      leyenda.style.cssText = "display:flex;flex-wrap:wrap;gap:12px;";
+      series.forEach(serie => {
+      const elemento = document.createElement("span");
+      elemento.textContent = `■ ${serie.label}`;
+      elemento.style.color = serie.color;
+      leyenda.appendChild(elemento);
+      });
+      const contenedor = document.createElement("div");
+      contenedor.append(svg, leyenda);
+      canvas.replaceWith(contenedor);
+    }
+
+    function crearTablaReporte(encabezados, filas) {
+      const tabla = document.createElement("table");
+      const thead = document.createElement("thead");
+      const filaEncabezado = document.createElement("tr");
+      encabezados.forEach(titulo => {
+      const celda = document.createElement("th");
+      celda.textContent = titulo;
+      filaEncabezado.appendChild(celda);
+      });
+      thead.appendChild(filaEncabezado);
+      tabla.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      if (!filas.length) {
+      const filaVacia = document.createElement("tr");
+      const celdaVacia = document.createElement("td");
+      celdaVacia.colSpan = encabezados.length;
+      celdaVacia.textContent = "No hay registros para mostrar.";
+      filaVacia.appendChild(celdaVacia);
+      tbody.appendChild(filaVacia);
+      } else {
+      filas.forEach(datosFila => {
+        const fila = document.createElement("tr");
+        datosFila.forEach(dato => {
+          const celda = document.createElement("td");
+          celda.textContent = dato;
+          fila.appendChild(celda);
+        });
+        tbody.appendChild(fila);
+      });
+      }
+      tabla.appendChild(tbody);
+      return tabla;
     }
 
     async function procesarArchivosLote() {
@@ -1017,6 +1251,7 @@ async function enviarAlDrive(payload) {
         }
         renderTabs();
         renderTabla();
+        guardarEstadoApp();
         if (errores.length) {
           alert("Algunos archivos no pudieron procesarse:\n" + errores.join("\n"));
           return;

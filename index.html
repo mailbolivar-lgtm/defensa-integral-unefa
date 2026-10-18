@@ -212,6 +212,7 @@
       <button class="btn btn-warning" onclick="verAsistenciaDia()">📊 Asistencia del Día</button>
       <button class="btn btn-dark" onclick="verGraficasEvolucion()">📉 Gráficas y Acumulados</button>
       <button class="btn btn-danger" onclick="eliminarListaActual()">🗑️ Eliminar Lista/Sección</button>
+      <button class="btn btn-primary" onclick="openModal('modalGoogle')">☁️ Configurar Google Drive/Sheets</button>
     </div>
 
     <!-- Pestañas por Sección / Materia -->
@@ -343,13 +344,45 @@
     </div>
   </div>
 
+  <div class="modal" id="modalGoogle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Conectar Google Drive y Sheets</h3>
+        <button class="close-btn" onclick="closeModal('modalGoogle')">&times;</button>
+      </div>
+      <p>Prepara la conexión una sola vez:</p>
+      <ol>
+        <li>Abre <a href="https://script.google.com/home/start" target="_blank" rel="noopener">Google Apps Script</a> y pega el contenido de <code>Code.gs</code> del repositorio.</li>
+        <li>En <strong>Configuración del proyecto → Propiedades del script</strong>, crea <code>API_KEY</code> con una clave aleatoria de al menos 32 caracteres. No publiques ni compartas esta clave.</li>
+        <li>Selecciona <strong>Implementar → Nueva implementación → Aplicación web</strong>, ejecuta como tu cuenta y permite acceso a <strong>Cualquier persona</strong> para que GitHub Pages pueda invocarlo. El script rechaza las operaciones que no presenten la clave privada. Autoriza el acceso solicitado a Drive y Sheets.</li>
+        <li>Pega abajo la URL de la implementación que termina en <code>/exec</code> y la misma clave <code>API_KEY</code>; guarda y prueba.</li>
+      </ol>
+      <p>Los PDF/fotos se guardan en una carpeta de Drive <strong>Sistema_Asistencia_UNEFA_Listas</strong>; las asistencias y el índice de listas van a pestañas de la hoja <strong>Sistema_Asistencia_UNEFA</strong>.</p>
+      <label for="inputUrlAppsScript"><strong>URL de la aplicación web de Apps Script:</strong></label>
+      <input type="url" id="inputUrlAppsScript" placeholder="https://script.google.com/macros/s/.../exec" style="width:100%; box-sizing:border-box; margin:8px 0;">
+      <label for="inputClaveGoogle"><strong>Clave privada de sincronización:</strong></label>
+      <input type="password" id="inputClaveGoogle" autocomplete="new-password" style="width:100%; box-sizing:border-box; margin:8px 0;">
+      <button class="btn btn-primary" onclick="guardarConfiguracionGoogle()">Guardar conexión</button>
+      <button class="btn btn-success" onclick="probarConexionGoogle()">Probar conexión</button>
+      <div id="estadoConfiguracionGoogle" role="status" style="margin-top:12px;"></div>
+      <div id="estadoSincronizacionGoogle" role="status" style="margin-top:8px;"></div>
+      <p><strong>Hoja de cálculo de destino:</strong> <a href="https://docs.google.com/spreadsheets/d/10zgHs7Tt6CA4YuJWe9Lfb6OyWPKJ9N8G9YlIrWzzjHo/edit?gid=0#gid=0" target="_blank" rel="noopener">Sistema_Asistencia_UNEFA</a></p>
+      <p>La clave debe coincidir con la propiedad privada <code>API_KEY</code> configurada en Apps Script. No la publiques ni la agregues al código fuente.</p>
+    </div>
+  </div>
+
   <script>
     if (typeof pdfjsLib !== "undefined") {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     }
 
-    // URL de conexión con Google Apps Script / Google Drive (Opcional si lo despliega en Drive)
-    const URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycby6WbxVIq_T522UdzCwGetx5DudpRz5Se_bwQdkLDUueOYhbaYqPqzfAyP_MiwgSSGlxg/exec"; 
+    const CLAVE_URL_APPS_SCRIPT = "unefaAppsScriptUrl_v1";
+    const CLAVE_TOKEN_APPS_SCRIPT = "unefaAppsScriptKey_v1";
+    const ID_HOJA_ASISTENCIAS = "10zgHs7Tt6CA4YuJWe9Lfb6OyWPKJ9N8G9YlIrWzzjHo";
+    const TAMANO_MAXIMO_ARCHIVO_DRIVE = 7 * 1024 * 1024;
+    let urlAppsScript = "";
+    let claveAppsScript = "";
+    let estadoSincronizacionGoogle = "";
 
     let seccionesData = {
       "08S-2422-D1": {
@@ -472,6 +505,7 @@
     let graficasReporte = [];
     let cedulasPendientesChequeo = new Set();
     const CLAVE_ESTADO_APP = "unefaControlAsistencia_v1";
+    const CLAVE_COLA_ASISTENCIA_GOOGLE = "unefaAttendanceQueue_v1";
     let errorPersistencia = null;
 
     function destruirGraficasReporte() {
@@ -484,10 +518,246 @@
 
     window.onload = function() {
       cargarEstadoGuardado();
+      cargarConfiguracionGoogle();
       document.getElementById('inputFechaNota').valueAsDate = new Date();
       renderTabs();
       renderTabla();
+      sincronizarColaGoogle().catch(error => {
+        console.error("Quedaron asistencias pendientes de sincronizar:", error);
+        actualizarEstadoSincronizacionGoogle(error.message, "var(--warning)");
+      });
     };
+
+    function cargarConfiguracionGoogle() {
+      try {
+        urlAppsScript = localStorage.getItem(CLAVE_URL_APPS_SCRIPT) || "";
+        claveAppsScript = localStorage.getItem(CLAVE_TOKEN_APPS_SCRIPT) || "";
+      } catch (error) {
+        console.error("No se pudo leer la configuración de Google:", error);
+      }
+      const inputUrl = document.getElementById("inputUrlAppsScript");
+      const inputClave = document.getElementById("inputClaveGoogle");
+      if (inputUrl) inputUrl.value = urlAppsScript;
+      if (inputClave) inputClave.value = claveAppsScript;
+      actualizarEstadoConfiguracionGoogle();
+    }
+
+    function actualizarEstadoConfiguracionGoogle() {
+      const estado = document.getElementById("estadoConfiguracionGoogle");
+      if (!estado) return;
+      estado.textContent = urlAppsScript
+        ? (claveAppsScript ? "URL y clave privada guardadas en este navegador." : "Falta configurar la clave privada.")
+        : "Google todavía no está conectado. Configura la URL de Apps Script y la clave privada.";
+      estado.style.color = urlAppsScript && claveAppsScript ? "var(--success)" : "var(--warning)";
+    }
+
+    function actualizarEstadoSincronizacionGoogle(mensaje, color = "var(--info)") {
+      estadoSincronizacionGoogle = mensaje;
+      const estado = document.getElementById("estadoSincronizacionGoogle");
+      if (!estado) return;
+      estado.textContent = mensaje;
+      estado.style.color = color;
+    }
+
+    function guardarConfiguracionGoogle() {
+      const nuevaUrl = document.getElementById("inputUrlAppsScript").value.trim();
+      const nuevaClave = document.getElementById("inputClaveGoogle").value.trim();
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(nuevaUrl)) {
+        alert("Pega la URL de despliegue de Apps Script. Debe comenzar con https://script.google.com/macros/s/ y terminar en /exec.");
+        return;
+      }
+      if (nuevaClave.length < 24) {
+        alert("La clave privada debe tener al menos 24 caracteres y coincidir con la propiedad API_KEY de Apps Script.");
+        return;
+      }
+      try {
+        localStorage.setItem(CLAVE_URL_APPS_SCRIPT, nuevaUrl);
+        localStorage.setItem(CLAVE_TOKEN_APPS_SCRIPT, nuevaClave);
+        urlAppsScript = nuevaUrl;
+        claveAppsScript = nuevaClave;
+        actualizarEstadoConfiguracionGoogle();
+        alert("Conexión guardada en este navegador. Los próximos archivos y registros usarán esta URL.");
+        sincronizarColaGoogle().catch(error => {
+          console.error("No se pudieron sincronizar asistencias pendientes:", error);
+        });
+      } catch (error) {
+        console.error("No se pudo guardar la URL de Apps Script:", error);
+        alert("No se pudo guardar la URL en este navegador. Revisa los permisos de almacenamiento.");
+      }
+    }
+
+    async function probarConexionGoogle() {
+      const estado = document.getElementById("estadoConfiguracionGoogle");
+      estado.textContent = "Comprobando acceso a Google Drive y Sheets...";
+      estado.style.color = "var(--secondary)";
+      try {
+        const respuesta = await enviarAlDrive({ action: "ping", spreadsheetId: ID_HOJA_ASISTENCIAS });
+        estado.textContent = `Conexión confirmada. Hoja: ${respuesta.spreadsheetName}.`;
+        estado.style.color = "var(--success)";
+        actualizarEstadoSincronizacionGoogle("Conexión con Drive y Sheets comprobada.", "var(--success)");
+      } catch (error) {
+        console.error("Falló la prueba de conexión con Google:", error);
+        estado.textContent = `No se pudo confirmar la conexión: ${error.message}`;
+        estado.style.color = "var(--danger)";
+      }
+    }
+
+    async function enviarAlDrive(payload) {
+      if (!urlAppsScript || !claveAppsScript) {
+        throw new Error("Google no está configurado. Guarda la URL de Apps Script y la clave privada en “Configurar Google Drive/Sheets”.");
+      }
+      const requestId = crearIdSolicitudGoogle();
+      try {
+        await fetch(urlAppsScript, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ ...payload, apiKey: claveAppsScript, requestId })
+        });
+      } catch (error) {
+        console.error("No se pudo enviar la solicitud a Google:", error);
+        throw new Error("Falló el envío de datos a Google. Comprueba la conexión a Internet y la URL de Apps Script.");
+      }
+      const respuesta = await esperarConfirmacionGoogle(requestId);
+      if (!respuesta.ok) throw new Error(respuesta.error || "Apps Script rechazó la solicitud.");
+      return respuesta.result;
+    }
+
+    function crearIdSolicitudGoogle() {
+      if (!window.crypto || !window.crypto.getRandomValues) {
+        throw new Error("Este navegador no permite crear un identificador seguro para sincronizar con Google.");
+      }
+      const bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function consultarResultadoGoogle(requestId) {
+      return new Promise((resolve, reject) => {
+        const callbackName = `__unefaGoogle_${requestId}`;
+        const script = document.createElement("script");
+        const timeout = window.setTimeout(() => {
+          delete window[callbackName];
+          script.remove();
+          reject(new Error("Se agotó el tiempo esperando confirmación de Google."));
+        }, 15000);
+        window[callbackName] = respuesta => {
+          window.clearTimeout(timeout);
+          delete window[callbackName];
+          script.remove();
+          resolve(respuesta);
+        };
+        script.onerror = () => {
+          window.clearTimeout(timeout);
+          delete window[callbackName];
+          script.remove();
+          reject(new Error("No se pudo consultar la confirmación de Apps Script."));
+        };
+        const url = new URL(urlAppsScript);
+        url.searchParams.set("requestId", requestId);
+        url.searchParams.set("callback", callbackName);
+        url.searchParams.set("_", String(Date.now()));
+        script.src = url.toString();
+        document.head.appendChild(script);
+      });
+    }
+
+    async function esperarConfirmacionGoogle(requestId) {
+      for (let intento = 0; intento < 12; intento++) {
+        const respuesta = await consultarResultadoGoogle(requestId);
+        if (!respuesta.pending) return respuesta;
+        await new Promise(resolve => window.setTimeout(resolve, 1000));
+      }
+      throw new Error("Google recibió la solicitud, pero aún no confirmó el guardado. Revisa Drive o la hoja antes de volver a enviarla.");
+    }
+
+    function obtenerRegistroParaGoogle(cedula, metodo, archivoOrigen = "") {
+      const alumno = seccionesData[seccionActual].alumnos.find(item => item.cedula === cedula);
+      if (!alumno) throw new Error(`La cédula ${cedula} ya no pertenece a la sección seleccionada.`);
+      return {
+        fecha: fechaLocalISO(),
+        seccion: seccionActual,
+        materia: seccionesData[seccionActual].materia,
+        cedula: alumno.cedula,
+        nombre: alumno.nombre,
+        genero: alumno.genero,
+        metodo,
+        archivoOrigen
+      };
+    }
+
+    async function sincronizarAsistenciasGoogle(registros) {
+      const cola = cargarColaAsistenciaGoogle();
+      const claves = new Set(cola.map(registro => `${registro.fecha}|${registro.seccion}|${registro.cedula}`));
+      registros.forEach(registro => {
+        const clave = `${registro.fecha}|${registro.seccion}|${registro.cedula}`;
+        if (!claves.has(clave)) {
+          claves.add(clave);
+          cola.push(registro);
+        }
+      });
+      guardarColaAsistenciaGoogle(cola);
+      return sincronizarColaGoogle();
+    }
+
+    function cargarColaAsistenciaGoogle() {
+      const valor = localStorage.getItem(CLAVE_COLA_ASISTENCIA_GOOGLE);
+      if (!valor) return [];
+      const cola = JSON.parse(valor);
+      if (!Array.isArray(cola)) throw new Error("La cola pendiente de asistencias tiene un formato inválido.");
+      return cola;
+    }
+
+    function guardarColaAsistenciaGoogle(cola) {
+      localStorage.setItem(CLAVE_COLA_ASISTENCIA_GOOGLE, JSON.stringify(cola));
+    }
+
+    async function sincronizarColaGoogle() {
+      const cola = cargarColaAsistenciaGoogle();
+      if (!cola.length) return;
+      if (!urlAppsScript || !claveAppsScript) {
+        actualizarEstadoSincronizacionGoogle(`${cola.length} asistencia(s) pendiente(s). Configura la conexión para enviarlas.`, "var(--warning)");
+        throw new Error("Configura la URL y la clave privada de Google para sincronizar las asistencias pendientes.");
+      }
+      while (cola.length) {
+        const lote = cola.slice(0, 500);
+        try {
+          await enviarAlDrive({ action: "recordAttendance", spreadsheetId: ID_HOJA_ASISTENCIAS, records: lote });
+          cola.splice(0, lote.length);
+          guardarColaAsistenciaGoogle(cola);
+          actualizarEstadoSincronizacionGoogle(`Google confirmó ${lote.length} asistencia(s).`);
+        } catch (error) {
+          actualizarEstadoSincronizacionGoogle(`${cola.length} asistencia(s) quedan pendientes: ${error.message}`, "var(--danger)");
+          throw error;
+        }
+      }
+    }
+
+    async function guardarArchivoListaEnDrive(file, origen) {
+      if (file.size > TAMANO_MAXIMO_ARCHIVO_DRIVE) {
+        throw new Error(`${file.name} supera el límite de 7 MB para guardarlo en Drive desde la página.`);
+      }
+      const dataUrl = await new Promise((resolve, reject) => {
+        const lector = new FileReader();
+        lector.onload = () => typeof lector.result === "string"
+          ? resolve(lector.result)
+          : reject(new Error("No se pudo leer el archivo seleccionado."));
+        lector.onerror = () => reject(lector.error || new Error("Falló la lectura del archivo."));
+        lector.readAsDataURL(file);
+      });
+      const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      return enviarAlDrive({
+        action: "saveListFile",
+        spreadsheetId: ID_HOJA_ASISTENCIAS,
+        date: fechaLocalISO(),
+        section: seccionActual,
+        subject: seccionesData[seccionActual].materia,
+        source: origen,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        base64
+      });
+    }
 
     function fechaLocalISO(fecha = new Date()) {
       const anio = fecha.getFullYear();
@@ -714,19 +984,6 @@
       document.getElementById("btnCapturar").style.display = "none";
       document.getElementById("msgChequeo").innerText = "";
     }
-async function enviarAlDrive(payload) {
-  if (!URL_APPS_SCRIPT) return;
-  try {
-    await fetch(URL_APPS_SCRIPT, {
-      method: "POST",
-      mode: "no-cors", // Evita bloqueos de seguridad del navegador
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-  } catch (e) {
-    console.error("Error al sincronizar con Google Drive:", e);
-  }
-}
     async function capturarYScanear() {
       const video = document.getElementById("webcam");
       const msg = document.getElementById("msgChequeo");
@@ -761,7 +1018,7 @@ async function enviarAlDrive(payload) {
       }
     }
 
-    function marcarAsistenciaManual() {
+    async function marcarAsistenciaManual() {
       const ced = document.getElementById("inputCedulaChequeo").value.replace(/\D/g, "");
       const msg = document.getElementById("msgChequeo");
       if (!ced) return;
@@ -780,6 +1037,14 @@ async function enviarAlDrive(payload) {
         msg.innerText = errorPersistencia
           ? `⚠️ Asistencia registrada temporalmente para ${alumno.nombre}, pero no se pudo guardar en este navegador.`
           : "✅ Asistencia registrada: " + alumno.nombre;
+        try {
+          await sincronizarAsistenciasGoogle([obtenerRegistroParaGoogle(ced, "manual")]);
+          msg.style.color = "var(--success)";
+          msg.innerText += " Google confirmó el registro en la hoja.";
+        } catch (error) {
+          msg.style.color = "var(--warning)";
+          msg.innerText += ` No se sincronizó con Google: ${error.message}`;
+        }
       }
       document.getElementById("inputCedulaChequeo").value = "";
     }
@@ -810,7 +1075,9 @@ async function enviarAlDrive(payload) {
       document.getElementById("loadingListaChequeo").style.display = "block";
       resultado.innerHTML = "";
       const errores = [];
+      const erroresDrive = [];
       let cedulasLeidas = 0;
+      let archivosDrive = 0;
       try {
         for (const file of files) {
           try {
@@ -822,12 +1089,19 @@ async function enviarAlDrive(payload) {
               cedulasPendientesChequeo.add(ced);
               cedulasLeidas++;
             });
+            try {
+              await guardarArchivoListaEnDrive(file, "Chequeo de asistencia");
+              archivosDrive++;
+            } catch (errorDrive) {
+              console.error(`No se pudo archivar ${file.name} en Drive:`, errorDrive);
+              erroresDrive.push(`${file.name}: ${errorDrive.message || errorDrive}`);
+            }
           } catch (error) {
             console.error(`Error al leer ${file.name}:`, error);
             errores.push(`${file.name}: ${error.message || error}`);
           }
         }
-        mostrarVistaPreviaChequeo(cedulasLeidas, errores);
+        mostrarVistaPreviaChequeo(cedulasLeidas, errores, erroresDrive, archivosDrive);
       } finally {
         boton.disabled = false;
         document.getElementById("loadingListaChequeo").style.display = "none";
@@ -886,7 +1160,7 @@ async function enviarAlDrive(payload) {
       document.getElementById("resultadoListaChequeo").innerHTML = "";
     }
 
-    function mostrarVistaPreviaChequeo(cantidadLeida, errores) {
+    function mostrarVistaPreviaChequeo(cantidadLeida, errores, erroresDrive = [], archivosDrive = 0) {
       const resultado = document.getElementById("resultadoListaChequeo");
       const presentes = new Set(registroAsistencias[fechaLocalISO()]?.[seccionActual] || []);
       const alumnos = Array.from(cedulasPendientesChequeo)
@@ -945,6 +1219,17 @@ async function enviarAlDrive(payload) {
         avisoErrores.textContent = `No se pudieron leer algunos archivos: ${errores.join("; ")}`;
         resultado.appendChild(avisoErrores);
       }
+      if (erroresDrive.length) {
+        const avisoDrive = document.createElement("p");
+        avisoDrive.style.color = "var(--warning)";
+        avisoDrive.textContent = `No se pudieron enviar estos archivos a Drive: ${erroresDrive.join("; ")}`;
+        resultado.appendChild(avisoDrive);
+      } else if (archivosDrive > 0) {
+        const avisoDrive = document.createElement("p");
+        avisoDrive.style.color = "var(--info)";
+        avisoDrive.textContent = "Google confirmó el guardado de los archivos en Drive.";
+        resultado.appendChild(avisoDrive);
+      }
       if (cantidadLeida === 0 && errores.length === 0) {
         const sinDatos = document.createElement("p");
         sinDatos.textContent = "No se detectaron cédulas de 7 u 8 dígitos en los archivos.";
@@ -952,12 +1237,15 @@ async function enviarAlDrive(payload) {
       }
     }
 
-    function registrarSeleccionChequeo() {
+    async function registrarSeleccionChequeo() {
       const seleccionados = document.querySelectorAll("#resultadoListaChequeo input[type='checkbox']:checked:not(:disabled)");
-      let nuevos = 0;
+      const registros = [];
       seleccionados.forEach(selector => {
-        if (registrarAsistencia(selector.dataset.cedula) === "registrado") nuevos++;
+        if (registrarAsistencia(selector.dataset.cedula) === "registrado") {
+          registros.push(obtenerRegistroParaGoogle(selector.dataset.cedula, "lista escaneada"));
+        }
       });
+      const nuevos = registros.length;
       cedulasPendientesChequeo.clear();
       document.getElementById("resultadoListaChequeo").innerHTML = "";
       const msg = document.getElementById("msgChequeo");
@@ -965,6 +1253,15 @@ async function enviarAlDrive(payload) {
       msg.innerText = errorPersistencia
         ? `⚠️ Se registraron ${nuevos} asistencia(s) en memoria, pero no se pudieron guardar.`
         : `✅ Se registraron ${nuevos} asistencia(s) nueva(s). Las ya registradas no se duplicaron.`;
+      if (registros.length) {
+        try {
+          await sincronizarAsistenciasGoogle(registros);
+          msg.innerText += " Google confirmó el registro en la hoja.";
+        } catch (error) {
+          msg.style.color = "var(--warning)";
+          msg.innerText += ` No se sincronizó con Google: ${error.message}`;
+        }
+      }
       document.getElementById("inputListaChequeo").value = "";
     }
 
@@ -1239,14 +1536,23 @@ async function enviarAlDrive(payload) {
       if (!files.length) return alert("Selecciona al menos un archivo.");
       document.getElementById("loadingLote").style.display = "block";
       const errores = [];
+      const erroresDrive = [];
       try {
         for (const file of files) {
           try {
-            if (file.type === "application/pdf") await procesarPDF(file);
+            if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) await procesarPDF(file);
             else await procesarImagenOCR(file);
+            guardarEstadoApp();
           } catch (error) {
             console.error(`Error al procesar ${file.name}:`, error);
             errores.push(`${file.name}: ${error.message || error}`);
+            continue;
+          }
+          try {
+            await guardarArchivoListaEnDrive(file, "Carga de listado");
+          } catch (errorDrive) {
+            console.error(`No se pudo archivar ${file.name} en Drive:`, errorDrive);
+            erroresDrive.push(`${file.name}: ${errorDrive.message || errorDrive}`);
           }
         }
         renderTabs();
@@ -1254,10 +1560,15 @@ async function enviarAlDrive(payload) {
         guardarEstadoApp();
         if (errores.length) {
           alert("Algunos archivos no pudieron procesarse:\n" + errores.join("\n"));
-          return;
+        } else {
+          closeModal("modalCarga");
+          alert(erroresDrive.length
+            ? "Listas procesadas e incorporadas; algunos archivos no se guardaron en Google Drive."
+            : "Listas procesadas e incorporadas. Google confirmó el guardado de los archivos en Drive.");
         }
-        closeModal("modalCarga");
-        alert("¡Archivos procesados e incorporados con éxito!");
+        if (erroresDrive.length) {
+          alert("Algunas listas se procesaron en la página, pero no se pudieron enviar a Google Drive:\n" + erroresDrive.join("\n"));
+        }
       } finally {
         document.getElementById("loadingLote").style.display = "none";
       }

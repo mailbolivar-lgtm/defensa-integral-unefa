@@ -78,6 +78,8 @@
     .btn-info:hover { background: #138496; }
     .btn-dark { background: var(--dark); color: white; }
     .btn-dark:hover { background: #23272b; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #c82333; }
     
     .tabs-container {
       display: flex;
@@ -209,6 +211,7 @@
       <button class="btn btn-info" onclick="openModal('modalNotas')">📝 Añadir Notas por Alumno</button>
       <button class="btn btn-warning" onclick="verAsistenciaDia()">📊 Asistencia del Día</button>
       <button class="btn btn-dark" onclick="verGraficasEvolucion()">📉 Gráficas y Acumulados</button>
+      <button class="btn btn-danger" onclick="eliminarListaActual()">🗑️ Eliminar Lista/Sección</button>
     </div>
 
     <!-- Pestañas por Sección / Materia -->
@@ -278,7 +281,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h3>Formulario de Chequeo de Asistencia</h3>
-        <button class="close-btn" onclick="closeModal('modalChequeo'); detenerCamara();">&times;</button>
+        <button class="close-btn" onclick="closeModal('modalChequeo'); detenerCamara(); limpiarListaChequeo();">&times;</button>
       </div>
       <div class="scanner-box">
         <h4>Escanear Cédula con Cámara</h4>
@@ -291,6 +294,15 @@
         <p><strong>O ingresa la cédula manualmente:</strong></p>
         <input type="text" id="inputCedulaChequeo" placeholder="Ej: 31130955" style="width:70%; font-size:1.2rem; text-align:center;" autofocus>
         <button class="btn btn-success" style="margin-top:10px;" onclick="marcarAsistenciaManual()">Registrar Asistencia</button>
+      </div>
+      <hr style="margin:20px 0;">
+      <div>
+        <h4>Chequear desde una lista formal</h4>
+        <p>Selecciona archivos PDF o fotos de la lista. Revisa las cédulas reconocidas antes de registrar; los duplicados se consolidan automáticamente.</p>
+        <input type="file" id="inputListaChequeo" multiple accept="application/pdf,image/*">
+        <button class="btn btn-primary" id="btnProcesarListaChequeo" style="margin-top:10px;" onclick="procesarListaChequeo()">🔎 Leer lista(s)</button>
+        <div id="loadingListaChequeo" style="display:none; margin-top:10px; color:var(--secondary);">Leyendo lista(s), esto puede tardar...</div>
+        <div id="resultadoListaChequeo" style="margin-top:15px;"></div>
       </div>
       <div id="msgChequeo" style="margin-top:15px; text-align:center; font-weight:bold;"></div>
     </div>
@@ -332,7 +344,9 @@
   </div>
 
   <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    if (typeof pdfjsLib !== "undefined") {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    }
 
     // URL de conexión con Google Apps Script / Google Drive (Opcional si lo despliega en Drive)
     const URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycby6WbxVIq_T522UdzCwGetx5DudpRz5Se_bwQdkLDUueOYhbaYqPqzfAyP_MiwgSSGlxg/exec"; 
@@ -454,6 +468,14 @@
     let registroNotas = {}; // Formato: { "YYYY-MM-DD": { "seccion": { "cedula": nota } } }
     let seccionActual = "08S-2422-D1";
     let mediaStream = null;
+    let cameraRequestId = 0;
+    let graficasReporte = [];
+    let cedulasPendientesChequeo = new Set();
+
+    function destruirGraficasReporte() {
+      graficasReporte.forEach(chart => chart.destroy());
+      graficasReporte = [];
+    }
 
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
@@ -517,6 +539,28 @@
 
     function ordenarYFiltrar() { renderTabla(); }
 
+    function eliminarListaActual() {
+      const seccion = seccionesData[seccionActual];
+      if (!seccion) return;
+      if (Object.keys(seccionesData).length <= 1) {
+        alert("No se puede eliminar la única lista disponible.");
+        return;
+      }
+      if (!confirm(`¿Eliminar la lista de ${seccionActual} (${seccion.materia})? También se borrarán sus asistencias y notas registradas en este navegador. Esta acción no se puede deshacer.`)) return;
+
+      delete seccionesData[seccionActual];
+      Object.values(registroAsistencias).forEach(asistenciasFecha => {
+        delete asistenciasFecha[seccionActual];
+      });
+      Object.values(registroNotas).forEach(notasFecha => {
+        delete notasFecha[seccionActual];
+      });
+      seccionActual = Object.keys(seccionesData)[0];
+      renderTabs();
+      renderTabla();
+      alert("La lista y sus registros asociados fueron eliminados.");
+    }
+
     // --- MÓDULO DE NOTAS ---
     function cargarListaParaNotas() {
       const fecha = document.getElementById('inputFechaNota').value;
@@ -572,8 +616,14 @@
       const msg = document.getElementById("msgChequeo");
 
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const requestId = ++cameraRequestId;
+        btnCam.disabled = true;
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
           .then(stream => {
+            if (requestId !== cameraRequestId || document.getElementById("modalChequeo").style.display === "none") {
+              stream.getTracks().forEach(track => track.stop());
+              return;
+            }
             mediaStream = stream;
             video.srcObject = stream;
             video.style.display = "block";
@@ -582,7 +632,9 @@
             msg.style.color = "var(--success)";
             msg.innerText = "📷 Cámara activa. Apunte a la cédula.";
           })
-          .catch(err => {
+          .catch(() => {
+            if (requestId !== cameraRequestId) return;
+            btnCam.disabled = false;
             msg.style.color = "var(--danger)";
             msg.innerText = "❌ Error de cámara: Permiso denegado.";
           });
@@ -593,13 +645,17 @@
     }
 
     function detenerCamara() {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
-        mediaStream = null;
-      }
+      cameraRequestId++;
       const video = document.getElementById("webcam");
+      const stream = mediaStream || video.srcObject;
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+      video.pause();
+      video.srcObject = null;
       video.style.display = "none";
-      document.getElementById("btnEncenderCam").style.display = "inline-block";
+      const btnCam = document.getElementById("btnEncenderCam");
+      btnCam.disabled = false;
+      btnCam.style.display = "inline-block";
       document.getElementById("btnCapturar").style.display = "none";
       document.getElementById("msgChequeo").innerText = "";
     }
@@ -629,9 +685,11 @@ async function enviarAlDrive(payload) {
 
       msg.style.color = "var(--warning)";
       msg.innerText = "⏳ Procesando documento por OCR...";
+      const requestId = cameraRequestId;
       
       try {
         const result = await Tesseract.recognize(canvas, 'spa');
+        if (requestId !== cameraRequestId || document.getElementById("modalChequeo").style.display === "none") return;
         const match = result.data.text.match(/\d{7,8}/);
 
         if (match) {
@@ -642,36 +700,208 @@ async function enviarAlDrive(payload) {
           msg.innerText = "❌ No se detectó cédula clara.";
         }
       } catch (e) {
+        if (requestId !== cameraRequestId || document.getElementById("modalChequeo").style.display === "none") return;
         msg.style.color = "var(--danger)";
         msg.innerText = "❌ Error OCR.";
       }
     }
 
     function marcarAsistenciaManual() {
-      const ced = document.getElementById("inputCedulaChequeo").value.trim();
+      const ced = document.getElementById("inputCedulaChequeo").value.replace(/\D/g, "");
       const msg = document.getElementById("msgChequeo");
       if (!ced) return;
 
+      const resultado = registrarAsistencia(ced);
+      if (resultado === "no-encontrado") {
+        msg.style.color = "var(--danger)";
+        msg.innerText = "❌ Cédula " + ced + " no pertenece a esta sección.";
+      } else if (resultado === "duplicado") {
+        const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
+        msg.style.color = "var(--warning)";
+        msg.innerText = "ℹ️ Ya tiene asistencia hoy: " + alumno.nombre;
+      } else {
+        const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
+        msg.style.color = "var(--success)";
+        msg.innerText = "✅ Asistencia registrada: " + alumno.nombre;
+      }
+      document.getElementById("inputCedulaChequeo").value = "";
+    }
+
+    function registrarAsistencia(ced) {
       const hoy = new Date().toISOString().split("T")[0];
       if (!registroAsistencias[hoy]) registroAsistencias[hoy] = {};
       if (!registroAsistencias[hoy][seccionActual]) registroAsistencias[hoy][seccionActual] = [];
 
       const alumno = seccionesData[seccionActual].alumnos.find(a => a.cedula === ced);
-      if (!alumno) {
-        msg.style.color = "var(--danger)";
-        msg.innerText = "❌ Cédula " + ced + " no pertenece a esta sección.";
+      if (!alumno) return "no-encontrado";
+      if (registroAsistencias[hoy][seccionActual].includes(ced)) return "duplicado";
+      registroAsistencias[hoy][seccionActual].push(ced);
+      return "registrado";
+    }
+
+    async function procesarListaChequeo() {
+      const files = document.getElementById("inputListaChequeo").files;
+      const resultado = document.getElementById("resultadoListaChequeo");
+      const boton = document.getElementById("btnProcesarListaChequeo");
+      if (!files.length) {
+        resultado.innerText = "Selecciona al menos un archivo PDF o una imagen.";
         return;
       }
 
-      if (registroAsistencias[hoy][seccionActual].includes(ced)) {
-        msg.style.color = "var(--warning)";
-        msg.innerText = "ℹ️ Ya tiene asistencia hoy: " + alumno.nombre;
-      } else {
-        registroAsistencias[hoy][seccionActual].push(ced);
-        msg.style.color = "var(--success)";
-        msg.innerText = "✅ Asistencia registrada: " + alumno.nombre;
+      boton.disabled = true;
+      document.getElementById("loadingListaChequeo").style.display = "block";
+      resultado.innerHTML = "";
+      const errores = [];
+      let cedulasLeidas = 0;
+      try {
+        for (const file of files) {
+          try {
+            const candidatas = file.type === "application/pdf"
+              ? await leerCedulasPDF(file)
+              : await leerCedulasImagen(file);
+            candidatas.forEach(ced => {
+              cedulasPendientesChequeo.add(ced);
+              cedulasLeidas++;
+            });
+          } catch (error) {
+            console.error(`Error al leer ${file.name}:`, error);
+            errores.push(`${file.name}: ${error.message || error}`);
+          }
+        }
+        mostrarVistaPreviaChequeo(cedulasLeidas, errores);
+      } finally {
+        boton.disabled = false;
+        document.getElementById("loadingListaChequeo").style.display = "none";
       }
-      document.getElementById("inputCedulaChequeo").value = "";
+    }
+
+    async function leerCedulasPDF(file) {
+      if (typeof pdfjsLib === "undefined") throw new Error("PDF.js no está disponible.");
+      const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+      const cedulas = new Set();
+      for (let numeroPagina = 1; numeroPagina <= pdf.numPages; numeroPagina++) {
+        const pagina = await pdf.getPage(numeroPagina);
+        const contenido = await pagina.getTextContent();
+        const textoPagina = contenido.items.map(item => item.str).join(" ");
+        extraerCedulas(textoPagina).forEach(ced => cedulas.add(ced));
+        if (!extraerCedulas(textoPagina).length) {
+          const viewport = pagina.getViewport({ scale: 2 });
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const contexto = canvas.getContext("2d");
+          if (!contexto) throw new Error("No se pudo preparar una página del PDF para OCR.");
+          await pagina.render({ canvasContext: contexto, viewport }).promise;
+          (await reconocerTexto(canvas)).forEach(ced => cedulas.add(ced));
+        }
+      }
+      return cedulas;
+    }
+
+    async function leerCedulasImagen(file) {
+      return extraerCedulas(await reconocerTexto(file));
+    }
+
+    async function reconocerTexto(origen) {
+      if (typeof Tesseract === "undefined") throw new Error("Tesseract.js no está disponible.");
+      const resultado = await Tesseract.recognize(origen, "spa");
+      return resultado.data.text;
+    }
+
+    function extraerCedulas(texto) {
+      const cedulas = new Set(texto.match(/\b\d{7,8}\b/g) || []);
+      const agrupadas = texto.matchAll(/\b(?:[VE]\s*[-:]?\s*)?(\d{1,2}(?:[.\s-]\d{3}){2,3})\b/gi);
+      for (const coincidencia of agrupadas) {
+        const cedula = coincidencia[1].replace(/\D/g, "");
+        if (cedula.length === 7 || cedula.length === 8) cedulas.add(cedula);
+      }
+      return cedulas;
+    }
+
+    function limpiarListaChequeo() {
+      cedulasPendientesChequeo.clear();
+      document.getElementById("inputListaChequeo").value = "";
+      document.getElementById("resultadoListaChequeo").innerHTML = "";
+    }
+
+    function mostrarVistaPreviaChequeo(cantidadLeida, errores) {
+      const resultado = document.getElementById("resultadoListaChequeo");
+      const presentes = new Set(registroAsistencias[new Date().toISOString().split("T")[0]]?.[seccionActual] || []);
+      const alumnos = Array.from(cedulasPendientesChequeo)
+        .map(ced => seccionesData[seccionActual].alumnos.find(alumno => alumno.cedula === ced))
+        .filter(Boolean);
+      const noEncontradas = Array.from(cedulasPendientesChequeo)
+        .filter(ced => !seccionesData[seccionActual].alumnos.some(alumno => alumno.cedula === ced));
+
+      resultado.innerHTML = "";
+      const resumen = document.createElement("p");
+      const yaRegistradas = alumnos.filter(alumno => presentes.has(alumno.cedula)).length;
+      resumen.textContent = `${cedulasPendientesChequeo.size} cédula(s) única(s) detectada(s) en total; ${alumnos.length} pertenecen a ${seccionActual}, ${yaRegistradas} ya estaban registradas y ${noEncontradas.length} no pertenecen a esta sección.`;
+      resultado.appendChild(resumen);
+
+      if (alumnos.length) {
+        const tabla = document.createElement("table");
+        tabla.innerHTML = "<thead><tr><th>Registrar</th><th>Cédula</th><th>Alumno</th><th>Estado</th></tr></thead>";
+        const cuerpo = document.createElement("tbody");
+        alumnos.forEach(alumno => {
+          const yaPresente = presentes.has(alumno.cedula);
+          const fila = document.createElement("tr");
+          const selector = document.createElement("input");
+          selector.type = "checkbox";
+          selector.checked = !yaPresente;
+          selector.disabled = yaPresente;
+          selector.dataset.cedula = alumno.cedula;
+          const celdaSelector = document.createElement("td");
+          celdaSelector.appendChild(selector);
+          const celdaCedula = document.createElement("td");
+          celdaCedula.textContent = `V-${alumno.cedula}`;
+          const celdaNombre = document.createElement("td");
+          celdaNombre.textContent = alumno.nombre;
+          const celdaEstado = document.createElement("td");
+          celdaEstado.textContent = yaPresente ? "Ya registrada hoy" : "Pendiente";
+          fila.append(celdaSelector, celdaCedula, celdaNombre, celdaEstado);
+          cuerpo.appendChild(fila);
+        });
+        tabla.appendChild(cuerpo);
+        resultado.appendChild(tabla);
+        const botonRegistrar = document.createElement("button");
+        botonRegistrar.className = "btn btn-success";
+        botonRegistrar.textContent = "Registrar seleccionados";
+        botonRegistrar.style.marginTop = "10px";
+        botonRegistrar.onclick = registrarSeleccionChequeo;
+        resultado.appendChild(botonRegistrar);
+      }
+
+      if (noEncontradas.length) {
+        const aviso = document.createElement("p");
+        aviso.textContent = `Cédulas omitidas por no estar en la sección: ${noEncontradas.join(", ")}`;
+        resultado.appendChild(aviso);
+      }
+      if (errores.length) {
+        const avisoErrores = document.createElement("p");
+        avisoErrores.style.color = "var(--danger)";
+        avisoErrores.textContent = `No se pudieron leer algunos archivos: ${errores.join("; ")}`;
+        resultado.appendChild(avisoErrores);
+      }
+      if (cantidadLeida === 0 && errores.length === 0) {
+        const sinDatos = document.createElement("p");
+        sinDatos.textContent = "No se detectaron cédulas de 7 u 8 dígitos en los archivos.";
+        resultado.appendChild(sinDatos);
+      }
+    }
+
+    function registrarSeleccionChequeo() {
+      const seleccionados = document.querySelectorAll("#resultadoListaChequeo input[type='checkbox']:checked:not(:disabled)");
+      let nuevos = 0;
+      seleccionados.forEach(selector => {
+        if (registrarAsistencia(selector.dataset.cedula) === "registrado") nuevos++;
+      });
+      cedulasPendientesChequeo.clear();
+      document.getElementById("resultadoListaChequeo").innerHTML = "";
+      const msg = document.getElementById("msgChequeo");
+      msg.style.color = "var(--success)";
+      msg.innerText = `✅ Se registraron ${nuevos} asistencia(s) nueva(s). Las ya registradas no se duplicaron.`;
+      document.getElementById("inputListaChequeo").value = "";
     }
 
     // --- REPORTES Y GRÁFICAS ---
@@ -683,6 +913,7 @@ async function enviarAlDrive(payload) {
       const totalFaltantes = totalAlumnos - totalPresentes;
 
       document.getElementById("tituloReporte").innerText = "Asistencia del Día (" + hoy + ")";
+      destruirGraficasReporte();
       document.getElementById("contenidoReporte").innerHTML = `
         <div style="text-align:center; margin-bottom:15px;">
           <p><strong>Total:</strong> ${totalAlumnos} | <strong style="color:var(--success);">Presentes:</strong> ${totalPresentes} | <strong style="color:var(--danger);">Faltantes:</strong> ${totalFaltantes}</p>
@@ -691,19 +922,22 @@ async function enviarAlDrive(payload) {
       `;
       openModal("modalReportes");
 
-      setTimeout(() => {
-        new Chart(document.getElementById("chartPieDia"), {
+      if (typeof Chart === "undefined") {
+        document.getElementById("contenidoReporte").innerText = "No se pudo cargar Chart.js para mostrar el reporte.";
+        return;
+      }
+      graficasReporte.push(new Chart(document.getElementById("chartPieDia"), {
           type: 'pie',
           data: {
             labels: ['Presentes', 'Faltantes'],
             datasets: [{ data: [totalPresentes, totalFaltantes], backgroundColor: ['#28a745', '#dc3545'] }]
           }
-        });
-      }, 200);
+        }));
     }
 
     function verGraficasEvolucion() {
       document.getElementById("tituloReporte").innerText = "Evolución de Asistencia y Rendimiento";
+      destruirGraficasReporte();
       document.getElementById("contenidoReporte").innerHTML = `
         <div class="stats-grid">
           <div class="card"><h4>Evolución Diaria</h4><canvas id="chartLineEvolucion"></canvas></div>
@@ -722,8 +956,28 @@ async function enviarAlDrive(payload) {
         dataFaltantes.push(totalAl - pres);
       });
 
-      setTimeout(() => {
-        new Chart(document.getElementById("chartLineEvolucion"), {
+      if (typeof Chart === "undefined") {
+        document.getElementById("contenidoReporte").innerText = "No se pudo cargar Chart.js para mostrar el reporte.";
+        return;
+      }
+
+      const notasPorAlumno = {};
+      Object.values(registroNotas).forEach(notasFecha => {
+        const notasSeccion = notasFecha[seccionActual] || {};
+        Object.entries(notasSeccion).forEach(([cedula, nota]) => {
+          if (!notasPorAlumno[cedula]) notasPorAlumno[cedula] = [];
+          notasPorAlumno[cedula].push(nota);
+        });
+      });
+      let aprobados = 0;
+      let reprobados = 0;
+      Object.values(notasPorAlumno).forEach(notas => {
+        const promedio = notas.reduce((suma, nota) => suma + nota, 0) / notas.length;
+        if (promedio >= 10) aprobados++;
+        else reprobados++;
+      });
+
+      graficasReporte.push(new Chart(document.getElementById("chartLineEvolucion"), {
           type: 'line',
           data: {
             labels: fechas.length ? fechas : ['Hoy'],
@@ -732,33 +986,46 @@ async function enviarAlDrive(payload) {
               { label: 'Faltantes', data: dataFaltantes.length ? dataFaltantes : [totalAl], borderColor: '#dc3545', fill: false }
             ]
           }
-        });
-        new Chart(document.getElementById("chartBarPorcentajes"), {
+        }));
+      graficasReporte.push(new Chart(document.getElementById("chartBarPorcentajes"), {
           type: 'bar',
           data: {
             labels: ['Aprobados (>= 10)', 'Reprobados (< 10)'],
-            datasets: [{ label: 'Alumnos', data: [totalAl, 0], backgroundColor: ['#17a2b8', '#dc3545'] }]
+            datasets: [{ label: 'Alumnos con notas', data: [aprobados, reprobados], backgroundColor: ['#17a2b8', '#dc3545'] }]
           }
-        });
-      }, 200);
+        }));
     }
 
     async function procesarArchivosLote() {
       const files = document.getElementById("inputLoteFiles").files;
       if (!files.length) return alert("Selecciona al menos un archivo.");
       document.getElementById("loadingLote").style.display = "block";
-      for (let file of files) {
-        if (file.type === "application/pdf") await procesarPDF(file);
-        else await procesarImagenOCR(file);
+      const errores = [];
+      try {
+        for (const file of files) {
+          try {
+            if (file.type === "application/pdf") await procesarPDF(file);
+            else await procesarImagenOCR(file);
+          } catch (error) {
+            console.error(`Error al procesar ${file.name}:`, error);
+            errores.push(`${file.name}: ${error.message || error}`);
+          }
+        }
+        renderTabs();
+        renderTabla();
+        if (errores.length) {
+          alert("Algunos archivos no pudieron procesarse:\n" + errores.join("\n"));
+          return;
+        }
+        closeModal("modalCarga");
+        alert("¡Archivos procesados e incorporados con éxito!");
+      } finally {
+        document.getElementById("loadingLote").style.display = "none";
       }
-      document.getElementById("loadingLote").style.display = "none";
-      closeModal("modalCarga");
-      renderTabs();
-      renderTabla();
-      alert("¡Archivos procesados e incorporados con éxito!");
     }
 
     async function procesarPDF(file) {
+      if (typeof pdfjsLib === "undefined") throw new Error("PDF.js no está disponible.");
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let textContent = "";
@@ -771,6 +1038,7 @@ async function enviarAlDrive(payload) {
     }
 
     async function procesarImagenOCR(file) {
+      if (typeof Tesseract === "undefined") throw new Error("Tesseract.js no está disponible.");
       const result = await Tesseract.recognize(file, 'spa');
       extraerYAgregarAlumnos(result.data.text, file.name);
     }
